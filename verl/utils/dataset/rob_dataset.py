@@ -81,7 +81,7 @@ class LIBERO_Dataset(Dataset):
                 if self.train_val == "train":
                     trials_range = list(range(0, int(self.num_trials_per_task)))
                 elif self.train_val == "valid":
-                    trials_range = list(range(0, int(self.num_trials_per_task))) + [0,25] 
+                    trials_range = list(range(0, int(self.num_trials_per_task)))  
                 else:
                     raise ValueError
                 for i in trials_range:
