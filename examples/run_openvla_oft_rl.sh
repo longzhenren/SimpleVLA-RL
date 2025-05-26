@@ -1,21 +1,24 @@
 set -x
 
 export NCCL_DEBUG=WARN 
-export WANDB_API_KEY='your wandb key'
+export WANDB_API_KEY='YOUR WANDB KEY'
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=true
 export CUDA_LAUNCH_BLOCKING=1
 export TORCH_USE_CUDA_DSA=1
 
 PROJECT_NAME='VLA-RL'
-EXPERIMENT_NAME='modified e.g. vla-lib10_model10j_lr10_tmp16_nsample8_batch32_ppominibs128_node2' 
-SFT_MODEL_PATH="your SFT_MODEL_PATH"
-CKPT_PATH="your path to save ckpt"
+EXPERIMENT_NAME='MODIFIED YOURSELF e.g. vla-lib10_model10j_lr10_tmp16_nsample8_clip08-128_batch64_ppominibs128_node2' 
+# For openvla-oft Libero-Long traj1 SFT or traj all SFT models can be find in https://huggingface.co/collections/Haozhan72/simplevla-rl-6833311430cd9df52aeb1f86
+SFT_MODEL_PATH="YOUR SFT_MODEL_PATH"
+CKPT_PATH="THE PATH YOU WANT TO SAVE YOUR CKPT"
+# DATASET_NAME can be libero_10 (libero_Long), libero_90, libero_spatial, libero_object, libero_goal
 DATASET_NAME="libero_10"
 VLA_NAME="openvla-oft"
 NUM_GPUS=8
-NUM_NODES=1
-ALIGN_PATH="your path to SimpleVLA-RL/scripts/align.json"
+# If you want to use 2*8 GPU to RL. Set NUM_NODES=2
+NUM_NODES=1 
+ALIGN_PATH="YOUR PATH TO SimpleVLA-RL/align.json"
 
 HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
     data.task_suite_name=$DATASET_NAME \
@@ -25,7 +28,7 @@ HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
     data.accuracy_lower_bound=0.1 \
     data.accuracy_upper_bound=0.9 \
     data.oversample_factor=1 \
-    data.train_batch_size=32 \
+    data.train_batch_size=64 \
     data.val_batch_size=496 \
     data.max_prompt_length=256 \
     data.max_response_length=128 \
@@ -35,7 +38,7 @@ HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
     actor_rollout_ref.model.action_chunks_len=8 \
     actor_rollout_ref.actor.optim.lr=5e-6 \
     actor_rollout_ref.actor.optim.warmup_style=constant \
-    actor_rollout_ref.actor.ppo_mini_batch_size=64 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=128 \
     actor_rollout_ref.actor.ppo_micro_batch_size=$NUM_GPUS \
     actor_rollout_ref.actor.use_dynamic_bsz=False \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
