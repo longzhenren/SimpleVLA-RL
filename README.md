@@ -43,9 +43,7 @@ We introduce SimpleVLA-RL, a simple yet effective approach for online Reinforcem
 
 
 # 📃Main Results
-We evaluate SimpleVLA-RL on the LIBERO using OpenVLA-OFT.
-
-SimpleVLA-RL improves the performance of OpenVLA-OFT to **97.6 points** on LIBERO-Long and sets a new state-of-the-art. Remarkably, using only one trajectory per task for cold-start SFT, SimpleVLA-RL raises the performance of OpenVLA-OFT from 17.3 to 91.7, yielding an improvement of **74.4 points (430.1%)**.
+We evaluate SimpleVLA-RL on the LIBERO using OpenVLA-OFT. SimpleVLA-RL improves the performance of OpenVLA-OFT to **97.6 points** on LIBERO-Long and sets a new state-of-the-art. Remarkably, using only one trajectory per task for cold-start SFT, SimpleVLA-RL raises the performance of OpenVLA-OFT from 17.3 to 91.7, yielding an improvement of **74.4 points (430.1%)**.
 
 <div align="center">
 <img src="figs/main.png" alt="Main Results of SimpleVLA-RL." width="75%" />
@@ -96,11 +94,11 @@ Before running the training script, ensure the following configurations are prop
    - `NUM_GPUS`: Number of GPUs available per node (e.g., `8`).  
    - `NUM_NODES`: Number of nodes used for RL training (e.g., `1`).
 
-   > [!NOTE]
-   > - The script has been tested on the following configurations:  
-   >   - Single-node setup: `NUM_NODES=1`, `NUM_GPUS=8` (1 node with 8 NVIDIA A800 GPUs, each having 80GB memory).  
-   >   - Multi-node setup: `NUM_NODES=2`, `NUM_GPUS=8` (2 nodes with 16 NVIDIA A800 GPUs, each having 80GB memory).  
-   > - The driver version used is `470.161.03`, and the CUDA version is `12.4`. *(Not necessary)*  
+> [!NOTE]
+> - The script has been tested on the following configurations:  
+>   - Single-node setup: `NUM_NODES=1`, `NUM_GPUS=8` (1 node with 8 NVIDIA A800 GPUs, each having 80GB memory).  
+>   - Multi-node setup: `NUM_NODES=2`, `NUM_GPUS=8` (2 nodes with 16 NVIDIA A800 GPUs, each having 80GB memory).  
+> - The driver version used is `470.161.03`, and the CUDA version is `12.4`. *(Not necessary)*  
 
 - **Run RL Training**  
    Use the following command to start RL training for OpenVLA-OFT on the LIBERO benchmark:
@@ -116,8 +114,6 @@ To evaluate the performance of your model, enable evaluation mode by setting `tr
 ```bash
 bash examples/run_openvla_oft_rl.sh
 ```
-
-This will evaluate the trained model based on the LIBERO.
 
 # 🌻Acknowledgement
 
