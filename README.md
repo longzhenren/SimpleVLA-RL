@@ -38,7 +38,7 @@ With **only one trajectory** per task for supervised fine-tuning (SFT), SimpleVL
 We introduce SimpleVLA-RL, a simple yet effective approach for online Reinforcement Learning (RL) for Vision-Language-Action (VLA) models, which utilizes only outcome-level 0/1 rule-based reward signals directly obtained from simulation environments.
 
 <div align="center">
-<img src="figs/simplevla-rl.png" alt="Overview of SimpleVLA-RL." width="75%" />
+<img src="figs/simplevla-rl.png" alt="Overview of SimpleVLA-RL." width="90%" />
 </div>
 
 
@@ -46,7 +46,7 @@ We introduce SimpleVLA-RL, a simple yet effective approach for online Reinforcem
 We evaluate SimpleVLA-RL on the LIBERO using OpenVLA-OFT. SimpleVLA-RL improves the performance of OpenVLA-OFT to **97.6 points** on LIBERO-Long and sets a new state-of-the-art. Remarkably, using only one trajectory per task for cold-start SFT, SimpleVLA-RL raises the performance of OpenVLA-OFT from 17.3 to 91.7, yielding an improvement of **74.4 points (430.1%)**.
 
 <div align="center">
-<img src="figs/main.png" alt="Main Results of SimpleVLA-RL." width="75%" />
+<img src="figs/main.png" alt="Main Results of SimpleVLA-RL." width="60%" />
 </div>
 
 # ✨ Getting Started
