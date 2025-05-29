@@ -142,7 +142,7 @@ If you find SimpleVLA-RL helpful, please cite us.
   title={SimpleVLA-RL: Online RL with Simple Reward Enables Training VLA Models with Only One Trajectory},
   author={{SimpleVLA-RL Team}},
   year={2025},
-  howpublished={\url{https://github.com/SimpleVLA/SimpleVLA-RL}},
+  howpublished={\url{https://github.com/PRIME-RL/SimpleVLA-RL}},
   note={GitHub repository}
 }
 ```
