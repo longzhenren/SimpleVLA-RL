@@ -4,6 +4,8 @@
 
 ## 🚀 Online RL with Simple Reward Enables Training VLA Models with Only One Trajectory
 
+[![Github](https://img.shields.io/badge/SimpleVLA--RL-000000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/PRIME-RL/SimpleVLA-RL) [![Hugging Face Collection](https://img.shields.io/badge/Models-fcd022?style=for-the-badge&logo=huggingface&logoColor=000)](https://huggingface.co/collections/Haozhan72/simplevla-rl-6833311430cd9df52aeb1f86) [![Twitter](https://img.shields.io/badge/Twitter-%23000000.svg?style=for-the-badge&logo=x&logoColor=white)](https://x.com/stingning/status/1927770654385860804)
+
 </div>
 
 <!-- <div align="center">
@@ -21,7 +23,10 @@
   </p>
 </div> -->
 
-With **only one trajectory** per task for supervised fine-tuning (SFT), SimpleVLA-RL leverages online reinforcement learning (RL) with simple outcome-level 0/1 rule-based reward signals to achieve performance comparable to full-trajectory SFT.
+
+> Motivated by the progress of DeepSeek-R1, we demonstrate that even simple 0/1 reward signals can enable effective online RL for VLA models and significantly reduce their dependence on training data.
+
+With **only one trajectory** per task for SFT, SimpleVLA-RL leverages online RL with simple outcome-level 0/1 rule-based reward signals to achieve performance comparable to full-trajectory SFT.
 
 <div align="center">
 <img src="figs/teaser.png" alt="Performance of SimpleVLA-RL." width="75%" />
@@ -49,7 +54,7 @@ We evaluate SimpleVLA-RL on the LIBERO using OpenVLA-OFT. SimpleVLA-RL improves 
 <img src="figs/main.png" alt="Main Results of SimpleVLA-RL." width="60%" />
 </div>
 
-# ✨ Getting Started
+# ✨Getting Started
 
 #### 1. Set Up the Environment
 
