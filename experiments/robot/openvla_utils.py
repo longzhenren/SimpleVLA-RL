@@ -26,10 +26,14 @@ def _load_dataset_stats(vla: torch.nn.Module, checkpoint_path: str) -> None:
     """
     if model_is_on_hf_hub(checkpoint_path):
         # Download dataset stats directly from HF Hub
-        dataset_statistics_path = hf_hub_download(
-            repo_id=checkpoint_path,
-            filename="dataset_statistics.json",
-        )
+        try:
+            dataset_statistics_path = hf_hub_download(
+                repo_id=checkpoint_path,
+                filename="dataset_statistics.json",
+            )
+        except Exception as e:
+            print(f"Failed to download dataset_statistics.json from HF Hub: {e}")
+            dataset_statistics_path = ""
     else:
         dataset_statistics_path = os.path.join(checkpoint_path, "dataset_statistics.json")
     if os.path.isfile(dataset_statistics_path):
