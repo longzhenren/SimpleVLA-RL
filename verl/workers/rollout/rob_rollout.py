@@ -17,6 +17,7 @@ TODO: refactor this class. Currently, it will hang when using FSDP HybridShard. 
 Then, get full state_dict and bind the state_dict to the single GPU model. Then, use the single GPU model to perform generation.
 """
 import contextlib
+import os
 import torch
 import torch.distributed
 from tensordict import TensorDict
@@ -40,6 +41,7 @@ from libero.libero import benchmark
 from codetiming import Timer
 from collections import deque
 import random
+import yaml
 
 import multiprocessing
 import gc
@@ -121,10 +123,7 @@ def center_crop_image(image):
     image = image.convert("RGB")
     return image
 
-
-
-def env_worker(task_name, task_id, trial_id, config, input_queue, output_queue, is_valid, global_steps, max_steps):
-    
+def env_worker_libero(task_name, task_id, trial_id, _, config, input_queue, output_queue, is_valid, global_steps, max_steps):
     benchmark_dict = benchmark.get_benchmark_dict()
     task_suite = benchmark_dict[task_name]()
     task = task_suite.get_task(task_id)
@@ -216,8 +215,181 @@ def env_worker(task_name, task_id, trial_id, config, input_queue, output_queue, 
         }
         output_queue.put(output_data)
         
-      
+def get_robotwin_args(task_name, config):
+    # TODO (cjh, fix): Assume config has `head_camera_type` attribute, chosen in [L515, D435], otherwise default to D435
+    TASK_DESCRIPTIONS = {
+        "block_hammer_beat": "There is a hammer and a block in the middle of the table. If the block is closer to the left robotic arm, it uses the left arm to pick up the hammer and strike the block; otherwise, it does the opposite.",
+        "block_handover": "A long block is placed on the left side of the table. The left arm grasps the upper side of the block and then hands it over to the right arm, which places the block on the blue mat on the right side of the table.",
+        "blocks_stack_easy": "Red and black cubes are placed randomly on the table. The robotic arm stacks the cubes in order, placing the red cubes first, followed by the black cubes, in the designated target location.",
+        "blocks_stack_hard": "Red, green, and blue cubes are placed randomly on the table. The robotic arm stacks the cubes in order, placing the red cubes first, followed by the green and then the blue cubes, in the designated target location.",
+        "bottle_adjust": "A bottle is placed horizontally on the table. The bottle's design is random and does not repeat in the training and testing sets. When the bottle's head is facing left, pick up the bottle with the right robot arm so that the bottle's head is facing up; otherwise, do the opposite.",
+        "container_place": "Random containers (cups, bowls, etc.) are placed randomly on the table. The robotic arm moves the containers into a fixed plate.",
+        "diverse_bottles_pick": "A random bottle is placed on the left and right sides of the table. The bottles' designs are random and do not repeat in the training and testing sets. Both left and right arms are used to lift the two bottles to a designated location.",
+        "dual_bottles_pick_easy": "A red bottle is placed randomly on the left side, and a green bottle is placed randomly on the right side of the table. Both bottles are standing upright. The left and right arms are used simultaneously to lift the two bottles to a designated location.",
+        "dual_bottles_pick_hard": "A red bottle is placed randomly on the left side, and a green bottle is placed randomly on the right side of the table. The bottles' postures are random. Both left and right arms are used simultaneously to lift the two bottles to a designated location.",
+        "dual_shoes_place": "One shoe is placed randomly on the left and right sides of the table. The shoes are the same pair with random designs that do not repeat in the training and testing sets. Both left and right arms are used to pick up the shoes and place them in the blue area, with the shoe heads facing the left side of the table.",
+        "empty_cup_place": "An empty cup and a cup mat are placed randomly on the left or right side of the table. The robotic arm places the empty cup on the cup mat.",
+        "mug_hanging_easy": "A mug is placed randomly on the left side of the table, and a mug rack is placed on the right side (fixed). The left arm moves the mug to a suitable position in the middle of the table, and then the right arm hangs the handle of the mug on the mug rack.",
+        "mug_hanging_hard": "A mug is placed randomly on the left side of the table, and a mug rack is placed randomly on the right side. The left arm moves the mug to a suitable position in the middle of the table, and then the right arm hangs the handle of the mug on the mug rack.",
+        "pick_apple_messy": "Apples and four random items are placed randomly on the table. The robotic arm picks up the apple and lifts it.",
+        "put_apple_cabinet": "Initially, an apple is placed randomly. The robotic arm uses the left arm to open the cabinet and the right arm to pick up the apple and place them inside.",
+        "shoe_place": "Shoes are placed randomly on the table, with random designs that do not repeat in the training and testing sets. The robotic arm moves the shoes to a blue area in the center of the table, with the shoe head facing the left side of the table.",
+        "tool_adjust": "A tool is placed horizontally on the table. The tool's design is random and does not repeat in the training and testing sets. When the tool's head is facing left, pick up the tool with the right robot arm so that the tool's head is facing up; otherwise, do the opposite."
+    }
 
+    config_path = os.path.join(
+        os.path.dirname(__file__),
+        '..', '..', 'utils', 'vla_utils', 'openvla_oft', 'robotwin', 'configs', '_base_task_config.yml'
+    )
+    with open(config_path, 'r', encoding='utf-8') as f:
+        args = yaml.load(f.read(), Loader=yaml.FullLoader)
+    
+    camera_config_path = os.path.join(
+        os.path.dirname(__file__),
+        '..', '..', 'utils', 'vla_utils', 'openvla_oft', 'robotwin', 'configs', '_camera_config.yml'
+    )
+    with open(camera_config_path, 'r', encoding='utf-8') as f:
+        camera_args = yaml.load(f.read(), Loader=yaml.FullLoader)
+    
+    args['task_name'] = task_name
+    args['task_description'] = TASK_DESCRIPTIONS[task_name]
+    args['head_camera_type'] = config.get('head_camera_type', 'D435')
+    args['head_camera_fovy'] = camera_args[args['head_camera_type']]['fovy']
+    args['head_camera_w'] = camera_args[args['head_camera_type']]['w']
+    args['head_camera_h'] = camera_args[args['head_camera_type']]['h']
+    args['wrist_camera_fovy'] = camera_args[args['wrist_camera_type']]['fovy']
+    args['wrist_camera_w'] = camera_args[args['wrist_camera_type']]['w']
+    args['wrist_camera_h'] = camera_args[args['wrist_camera_type']]['h']
+    args['front_camera_fovy'] = camera_args[args['front_camera_type']]['fovy']
+    args['front_camera_w'] = camera_args[args['front_camera_type']]['w']
+    args['front_camera_h'] = camera_args[args['front_camera_type']]['h']
+    
+    return args
+
+def get_robotwin_task(task_name, config):
+    envs_module = importlib.import_module(f'...utils.openvla_oft.robotwin.envs.{task_name}')
+    args = {}
+    try:
+        env_class = getattr(envs_module, task_name)
+        env_instance = env_class()
+        args = get_robotwin_args(task_name, config)
+    except:
+        raise SystemExit("No Task")
+    return env_instance, args
+
+def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue, output_queue, is_valid, __, ___):    
+    success = False
+    current_seed = trial_seed
+    while not success:
+        try:
+            env, args = get_robotwin_task(task_name, config)
+            demo_success = False
+            current_seed = trial_seed
+            while not demo_success:
+                try:
+                    env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
+                    env.play_once()
+                    env.close()
+                    demo_success = True
+                    success = True
+                except Exception as e:
+                    print(f"setup_demo failed with seed {current_seed}: {e}.\nRetrying...")
+                    current_seed += 1
+        except Exception as e:
+            print(f"*** env initialization failed: {e} ***")
+            if 'env' in locals() and env is not None:
+                try:
+                    env.close()
+                except Exception as e_close:
+                    print(f"error when closing the env: {e_close}")
+            torch.cuda.empty_cache()
+            gc.collect()
+            print("gc collect finish")
+        
+    env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
+    obs = env.get_obs()
+    
+    valid_images = []        
+    if is_valid:
+        img = obs['observation']['head_camera']['rgb']
+        valid_images.append(img)
+    
+    output_queue.put({
+        'type': 'init',
+        'obs': obs,
+        "task_description": args['task_description'],
+        'valid_images': valid_images.copy(),
+        'task_file_name': f"{task_name}_trial_{trial_id}_seed_{trial_seed}",
+        'active': True,
+        'complete': False,
+        'finish_step': 0
+    })
+    
+    active = True
+    complete = False
+    finish_step = 0
+    
+    obs = env.get_obs()
+    while True:
+        action = input_queue.get()
+        if action is None:
+            env.close()
+            output_queue.put({'type': 'terminate'})
+            break
+        
+        done = env._execute_actions_and_check_success(actions, obs)
+        obs = env.get_obs()
+        finish_step += actions.shape[0]
+        
+        step_images = []
+        if is_valid:
+            img = obs['observation']['head_camera']['rgb']
+            step_images.append(img)
+        
+        if done or finish_step >= env.step_lim:
+            active = False
+            complete = done
+                
+        output_data = {
+            'type': 'step',
+            'obs': obs,
+            'active': active,
+            'complete': complete,
+            'finish_step': finish_step,
+            'valid_images': step_images.copy() if is_valid else []
+        }
+        output_queue.put(output_data)
+
+def normalize_proprio(proprio: np.ndarray, norm_stats: Dict[str, Any]) -> np.ndarray:
+    """
+    Normalize proprioception data to match training distribution.
+
+    Args:
+        proprio: Raw proprioception data
+        norm_stats: Normalization statistics
+
+    Returns:
+        np.ndarray: Normalized proprioception data
+    """
+    if ACTION_PROPRIO_NORMALIZATION_TYPE == NormalizationType.BOUNDS:
+        mask = norm_stats.get("mask", np.ones_like(norm_stats["min"], dtype=bool))
+        proprio_high, proprio_low = np.array(norm_stats["max"]), np.array(norm_stats["min"])
+    elif ACTION_PROPRIO_NORMALIZATION_TYPE == NormalizationType.BOUNDS_Q99:
+        mask = norm_stats.get("mask", np.ones_like(norm_stats["q01"], dtype=bool))
+        proprio_high, proprio_low = np.array(norm_stats["q99"]), np.array(norm_stats["q01"])
+    else:
+        raise ValueError("Unsupported action/proprio normalization type detected!")
+    normalized_proprio = np.clip(
+        np.where(
+            mask,
+            2 * (proprio - proprio_low) / (proprio_high - proprio_low + 1e-8) - 1,
+            proprio,
+        ),
+        a_min=-1.0,
+        a_max=1.0,
+    )
+
+    return normalized_proprio
 
 class RobHFRollout(BaseRollout):
 
@@ -274,10 +446,9 @@ class RobHFRollout(BaseRollout):
         return output
     
     
-    def process_input(self,inputs:list, task_descriptions:list):
-        
-        batchdata = {"input_ids":[],"attention_mask":[],"pixel_values":[]}  
-        
+    def process_input(self, inputs: list, task_descriptions: list):
+        batchdata = {"input_ids": [], "attention_mask": [], "pixel_values": []}  
+
         for i in range(len(inputs)):
             input = inputs[i]
             task_description = task_descriptions[i]
@@ -286,16 +457,24 @@ class RobHFRollout(BaseRollout):
             if self.config.center_crop:
                 image = center_crop_image(image)
             prompt = f"In: What action should the robot take to {task_description.lower()}?\nOut:"
-            batch_feature  = self.processor(prompt, image)
-            
-            if "wrist_image" in input.keys():
-                wrist_image = Image.fromarray(input["wrist_image"]).convert("RGB")
-                if self.config.center_crop:
-                    wrist_image = center_crop_image(wrist_image)
-                wrist_batch_feature = self.processor(prompt, wrist_image)
-                primary_pixel_values = batch_feature["pixel_values"]
-                batch_feature["pixel_values"] = torch.cat([primary_pixel_values] + [wrist_batch_feature["pixel_values"]], dim=1)
-                
+            batch_feature = self.processor(prompt, image)
+
+            pixel_values_list = [batch_feature["pixel_values"]]
+
+            for key in input:
+                if "wrist" in key and isinstance(input[key], np.ndarray):
+                    wrist_image = Image.fromarray(input[key]).convert("RGB")
+                    if self.config.center_crop:
+                        wrist_image = center_crop_image(wrist_image)
+                    wrist_batch_feature = self.processor(prompt, wrist_image)
+                    pixel_values_list.append(wrist_batch_feature["pixel_values"])
+
+            batch_feature["pixel_values"] = torch.cat(pixel_values_list, dim=1)
+
+            batchdata["input_ids"].append(batch_feature["input_ids"])
+            batchdata["attention_mask"].append(batch_feature["attention_mask"])
+            batchdata["pixel_values"].append(batch_feature["pixel_values"])                
+
             input_ids = batch_feature["input_ids"]
             attention_mask = batch_feature["attention_mask"]
             pixel_values = batch_feature["pixel_values"]
@@ -313,6 +492,14 @@ class RobHFRollout(BaseRollout):
             batchdata["attention_mask"].append(attention_mask)    
             batchdata["pixel_values"].append(pixel_values)    
         
+        # Process proprioception data if used
+        # TODO (cjh, fix): check on how to pass use_proprio arg properly
+        proprio = None
+        if self.config.use_proprio:
+            proprio = input["state"]
+            proprio_norm_stats = self.module.norm_stats[self.config.unnorm_key]["proprio"]
+            input["state"] = normalize_proprio(proprio, proprio_norm_stats)
+            proprio = input["state"]
         
         device = torch.device('cuda') 
         
@@ -339,14 +526,13 @@ class RobHFRollout(BaseRollout):
 
         return batchdata
    
-    
-        
     def _generate_minibatch(self, prompts):
         self.module.eval()
         meta_info = prompts.meta_info
         n_samples = meta_info.get('n_samples', 1)
         task_id = prompts.batch['task_id'].repeat_interleave(n_samples, dim=0)
         trial_id = prompts.batch['trial_id'].repeat_interleave(n_samples, dim=0)
+        trial_seed = prompts.batch['trial_seed'].repeat_interleave(n_samples, dim=0)
         task_suite_name = np.repeat(prompts.non_tensor_batch['task_suite_name'], n_samples)
         max_steps = self.max_steps[self.config.task_suite_name]
         batch_size = task_id.size(0)
@@ -361,11 +547,13 @@ class RobHFRollout(BaseRollout):
             task_name = task_suite_name[idx]
             t_id = task_id[idx][0].item()
             tr_id = trial_id[idx][0].item()
+            tr_seed = trial_seed[idx][0].item()
             input_q = Queue()
             output_q = Queue()
+            env_worker = env_worker_libero if "libero" in self.config.task_suite_name else env_worker_robotwin
             p = Process(
                 target=env_worker,
-                args=(task_name, t_id, tr_id, self.config, input_q, output_q, is_valid, global_steps, max_steps)
+                args=(task_name, t_id, tr_id, tr_seed, self.config, input_q, output_q, is_valid, global_steps, max_steps)
             )
             p.start()
             processes.append(p)
@@ -647,23 +835,26 @@ class RobHFRollout(BaseRollout):
 
         
     def _obs_to_input(self, obs):
-        
-        if self.config.num_images_in_input > 1:
+        robotwin_state = obs['joint_action']
+        robotwin_state[6] /= 0.045
+        robotwin_state[13] /= 0.045
+        libero_state = np.concatenate([obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), bs["robot0_gripper_qpos"]])
+        state = libero_state if "libero" in self.config.task_suite_name else robotwin_state
+        if self.config.num_images_in_input == 3:
+            return {
+                "full_image": obs['observation']['head_camera']['rgb'],
+                "left_wrist": obs['observation']['left_camera']['rgb'],
+                "right_wrist": obs['observation']['right_camera']['rgb'],
+                "state": state
+            }
+        elif self.config.num_images_in_input == 2:
             return {
                 "full_image": get_libero_image(obs, 224),
                 "wrist_image": get_libero_wrist_image(obs, 224),
-                "state": np.concatenate([
-                    obs["robot0_eef_pos"],
-                    quat2axisangle(obs["robot0_eef_quat"]),
-                    obs["robot0_gripper_qpos"]
-                ])
+                "state": state
             }
         else:
             return {
-                "full_image": get_libero_image(obs, 224),
-                "state": np.concatenate([
-                    obs["robot0_eef_pos"],
-                    quat2axisangle(obs["robot0_eef_quat"]),
-                    obs["robot0_gripper_qpos"]
-                ])
+                "full_image": obs['observation']['head_camera']['rgb'],
+                "state": state
             }

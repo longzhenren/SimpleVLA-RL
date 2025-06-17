@@ -88,7 +88,8 @@ class LIBERO_Dataset(Dataset):
                     data = {
                         "task_suite_name": self.task_suite_name,
                         "task_id": torch.tensor(task_id, dtype=torch.int64).unsqueeze(0),
-                        "trial_id": torch.tensor(i, dtype=torch.int64).unsqueeze(0)
+                        "trial_id": torch.tensor(i, dtype=torch.int64).unsqueeze(0),
+                        "trial_seed": torch.tensor(-1, dtype=torch.int64).unsqueeze(0)
                     }
                     dataframes.append(data)
             self.dataframe = dataframes
@@ -106,6 +107,51 @@ class LIBERO_Dataset(Dataset):
         """
         return self.dataframe[item]
 
+class Robotwin_Dataset(Dataset):
+    def __init__(self, task_name, num_trials_per_task=50):
+        self.task_name = task_name  
+        self.all_task_names = ["block_hammer_beat", "block_handover", "blocks_stack_easy", "blocks_stack_hard", "bottle_adjust", "container_place", "diverse_bottles_pick", "dual_bottles_pick_easy", "dual_bottles_pick_hard", "dual_shoes_place", "empty_cup_place", "mug_hanging_easy", "mug_hanging_hard", "pick_apple_messy", "put_apple_cabinet", "shoe_place", "tool_adjust"]
+        self.num_trials_per_task = num_trials_per_task  
+        self.train_val = train_val
+        self._read_files_and_tokenize()
+
+    def _read_files_and_tokenize(self):
+        dataframes = []
+        if self.task_name in self.all_task_names:
+            for i in range(0, int(self.num_trials_per_task)):
+                data = {
+                    "task_suite_name": self.task_name,
+                    "task_id": torch.tensor(-1, dtype=torch.int64).unsqueeze(0),
+                    "trial_id": torch.tensor(i, dtype=torch.int64).unsqueeze(0),
+                    "trial_seed": torch.tensor(i, dtype=torch.int64).unsqueeze(0)
+                }
+                dataframes.append(data)
+            self.dataframe = dataframes
+            print(f'dataset len: {len(self.dataframe)}')
+        elif self.task_name == "robotwin_all":
+            # For robotwin_all, we iterate through all tasks and trials
+            for task_name in self.all_task_names:
+                for i in range(0, int(self.num_trials_per_task)):
+                    data = {
+                        "task_suite_name": task_name,
+                        "trial_id": torch.tensor(i, dtype=torch.int64).unsqueeze(0),
+                        "trial_seed": torch.tensor(i, dtype=torch.int64).unsqueeze(0)
+                    }
+                    dataframes.append(data)
+            self.dataframe = dataframes
+            print(f'dataset len: {len(self.dataframe)}')
+        else:
+            raise ValueError
+     
+
+    def __len__(self):
+        return len(self.dataframe)
+
+    def __getitem__(self, item):
+        """
+        Note that we also return the raw_input_ids so that it can be combined with other chat template
+        """
+        return self.dataframe[item]
 
 
 class BufferedDataLoader:
