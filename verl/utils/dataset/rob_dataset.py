@@ -111,8 +111,8 @@ class Robotwin_Dataset(Dataset):
     def __init__(self, task_name, num_trials_per_task=50):
         self.task_name = task_name  
         self.all_task_names = ["block_hammer_beat", "block_handover", "blocks_stack_easy", "blocks_stack_hard", "bottle_adjust", "container_place", "diverse_bottles_pick", "dual_bottles_pick_easy", "dual_bottles_pick_hard", "dual_shoes_place", "empty_cup_place", "mug_hanging_easy", "mug_hanging_hard", "pick_apple_messy", "put_apple_cabinet", "shoe_place", "tool_adjust"]
+        self.all_task_names = ["robotwin_" + name for name in self.all_task_names]
         self.num_trials_per_task = num_trials_per_task  
-        self.train_val = train_val
         self._read_files_and_tokenize()
 
     def _read_files_and_tokenize(self):

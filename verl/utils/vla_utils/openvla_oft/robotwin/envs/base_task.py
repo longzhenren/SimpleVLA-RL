@@ -2254,6 +2254,17 @@ class Base_task(gym.Env):
             del ffmpeg
         # --- End: Finalize Video on Fail/Timeout ---
 
+    def compress_path(self, path, tolerance=1e-5):
+        compressed = [path[0]]
+        for i in range(1, len(path)):
+            if not np.allclose(path[i], compressed[-1], atol=tolerance,rtol=0):
+                compressed.append(path[i])
+        
+        if len(compressed) == 1:
+            compressed.append(compressed[0].copy() + np.random.normal(0, 2e-4, 6))  
+            
+        return np.array(compressed)
+
     def _execute_actions_and_check_success(self, actions, obs):
         left_arm_actions, left_gripper, left_current_qpos, left_path = [], [], [], []
         right_arm_actions, right_gripper, right_current_qpos, right_path = [], [], [], []
@@ -2261,7 +2272,7 @@ class Base_task(gym.Env):
         left_arm_actions, left_gripper = actions[:, :6], actions[:, 6] # 0-5 left joint action, 6 left gripper action
         right_arm_actions, right_gripper = actions[:, 7:13], actions[:, 13] # 7-12 right joint action, 13 right gripper action
         
-        left_gripper *= 0.045obs
+        left_gripper *= 0.045
         right_gripper *= 0.045
         
         left_current_qpos, right_current_qpos = obs['joint_action'][:6], obs['joint_action'][7:13] # current joint and gripper action
@@ -2270,6 +2281,9 @@ class Base_task(gym.Env):
         right_path = np.vstack((right_current_qpos, right_arm_actions))
         
         topp_left_flag, topp_right_flag = True, True
+        
+        left_path = self.compress_path(left_path)
+        right_path = self.compress_path(right_path)
         
         try:
             times, left_pos, left_vel, acc, duration = self.left_planner.TOPP(left_path, 1/250, verbose=True)

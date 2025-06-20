@@ -306,8 +306,10 @@ class RayTrainer(object):
                                                   num_trials_per_task=self.config.data.num_trials_per_task)
             self.val_dataset = Robotwin_Dataset(self.config.data.task_suite_name,
                                                 num_trials_per_task=self.config.data.num_trials_per_task)
+        else:
+            raise ValueError(f'Unsupported task suite name: {self.config.data.task_suite_name}')
 
-       self.train_dataloader = BufferedDataLoader(DataLoader(dataset=self.train_dataset,
+        self.train_dataloader = BufferedDataLoader(DataLoader(dataset=self.train_dataset,
                                            batch_size=int(self.config.data.train_batch_size*self.config.data.oversample_factor),
                                            shuffle=True,
                                            drop_last=True,

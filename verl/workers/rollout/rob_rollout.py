@@ -24,6 +24,8 @@ from tensordict import TensorDict
 from torch import nn
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.nn.utils.rnn import pad_sequence
+import sys
+import importlib
 
 from verl import DataProto
 from verl.utils.torch_functional import get_eos_mask
@@ -32,7 +34,7 @@ from .base import BaseRollout
 
 from transformers import GenerationConfig, AutoProcessor
 
-from verl.utils.libero_utils import get_libero_env, get_libero_dummy_action, get_image_resize_size, get_libero_image, get_libero_wrist_image, quat2axisangle, normalize_gripper_action, invert_gripper_action, save_rollout_video
+# from verl.utils.libero_utils import get_libero_env, get_libero_dummy_action, get_image_resize_size, get_libero_image, get_libero_wrist_image, quat2axisangle, normalize_gripper_action, invert_gripper_action, save_rollout_video
 import numpy as np
 from PIL import Image
 import tensorflow as tf
@@ -267,7 +269,8 @@ def get_robotwin_args(task_name, config):
     return args
 
 def get_robotwin_task(task_name, config):
-    envs_module = importlib.import_module(f'...utils.openvla_oft.robotwin.envs.{task_name}')
+    sys.path.append('./verl')
+    envs_module = importlib.import_module(f'utils.vla_utils.openvla_oft.robotwin.envs.{task_name}')
     args = {}
     try:
         env_class = getattr(envs_module, task_name)
@@ -292,6 +295,7 @@ def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue,
                     env.close()
                     demo_success = True
                     success = True
+                    print("Test setup demo success!")
                 except Exception as e:
                     print(f"setup_demo failed with seed {current_seed}: {e}.\nRetrying...")
                     current_seed += 1
@@ -308,6 +312,7 @@ def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue,
         
     env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
     obs = env.get_obs()
+    print(f"env setup with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
     
     valid_images = []        
     if is_valid:
@@ -324,6 +329,7 @@ def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue,
         'complete': False,
         'finish_step': 0
     })
+    print(f"env initialized with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
     
     active = True
     complete = False
@@ -332,6 +338,7 @@ def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue,
     obs = env.get_obs()
     while True:
         action = input_queue.get()
+        print(f"Received action: {action}")
         if action is None:
             env.close()
             output_queue.put({'type': 'terminate'})
@@ -340,6 +347,7 @@ def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue,
         done = env._execute_actions_and_check_success(actions, obs)
         obs = env.get_obs()
         finish_step += actions.shape[0]
+        print(f"Step {finish_step}, done: {done}")
         
         step_images = []
         if is_valid:
@@ -360,7 +368,7 @@ def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue,
         }
         output_queue.put(output_data)
 
-def normalize_proprio(proprio: np.ndarray, norm_stats: Dict[str, Any]) -> np.ndarray:
+def normalize_proprio(proprio, norm_stats):
     """
     Normalize proprioception data to match training distribution.
 
@@ -426,8 +434,11 @@ class RobHFRollout(BaseRollout):
                     tf.config.experimental.set_memory_growth(gpu, True)
         
         if self.config.vla in ["openvla-oft"]:
-            if  self.config.unnorm_key not in self.module.norm_stats and f"{self.config.unnorm_key}_no_noops" in self.module.norm_stats:
-                self.config.unnorm_key = f"{self.config.unnorm_key}_no_noops"
+            if "libero" in self.config.task_suite_name:
+                if  self.config.unnorm_key not in self.module.norm_stats and f"{self.config.unnorm_key}_no_noops" in self.module.norm_stats:
+                    self.config.unnorm_key = f"{self.config.unnorm_key}_no_noops"
+            elif "robotwin" in self.config.task_suite_name:
+                self.config.unnorm_key = self.config.unnorm_key.removeprefix("robotwin_")
             assert self.config.unnorm_key in self.module.norm_stats, f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!"
 
 
@@ -534,7 +545,7 @@ class RobHFRollout(BaseRollout):
         trial_id = prompts.batch['trial_id'].repeat_interleave(n_samples, dim=0)
         trial_seed = prompts.batch['trial_seed'].repeat_interleave(n_samples, dim=0)
         task_suite_name = np.repeat(prompts.non_tensor_batch['task_suite_name'], n_samples)
-        max_steps = self.max_steps[self.config.task_suite_name]
+        max_steps = self.max_steps[self.config.task_suite_name] if "libero" in self.config.task_suite_name else -1
         batch_size = task_id.size(0)
         is_valid = meta_info.get('n_samples') is None
         global_steps = meta_info.get('global_steps', 0) if is_valid else 0
@@ -544,7 +555,7 @@ class RobHFRollout(BaseRollout):
         output_queues = []
         
         for idx in range(batch_size):
-            task_name = task_suite_name[idx]
+            task_name = task_suite_name[idx].removeprefix("robotwin_")
             t_id = task_id[idx][0].item()
             tr_id = trial_id[idx][0].item()
             tr_seed = trial_seed[idx][0].item()

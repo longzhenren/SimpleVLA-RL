@@ -56,8 +56,9 @@ def detect_robot_platform():
     elif "bridge" in cmd_args:
         return "BRIDGE"
     else:
-        # Default to LIBERO if unclear
-        return "LIBERO"
+        # TODO (cjh, fix): fix this to be more robust
+        # Default to ALOHA if unclear
+        return "ALOHA"
 
 
 # Determine which robot platform to use

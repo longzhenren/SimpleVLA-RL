@@ -5,7 +5,11 @@
     "VLLM_ATTENTION_BACKEND": "XFORMERS",
     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
     "TOKENIZERS_PARALLELISM": "true",
-    "WANDB_API_KEY": ""
+    "WANDB_API_KEY": "b595ad2ae82010a9bae860f6188de6a9f9092a4e",
+    "HTTP_PROXY": "http://127.0.0.1:7890",
+    "HTTPS_PROXY": "http://127.0.0.1:7890",
+    "http_proxy": "http://127.0.0.1:7890",
+    "https_proxy": "http://127.0.0.1:7890"
   },
   "excludes": [
     "*"
