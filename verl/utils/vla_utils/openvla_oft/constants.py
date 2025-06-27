@@ -50,7 +50,7 @@ def detect_robot_platform():
     cmd_args = " ".join(sys.argv).lower()
 
     if "libero" in cmd_args:
-        return "LIBERO"
+        return "ALOHA"
     elif "aloha" in cmd_args:
         return "ALOHA"
     elif "bridge" in cmd_args:
@@ -84,4 +84,4 @@ print(f"  NUM_ACTIONS_CHUNK = {NUM_ACTIONS_CHUNK}")
 print(f"  ACTION_DIM = {ACTION_DIM}")
 print(f"  PROPRIO_DIM = {PROPRIO_DIM}")
 print(f"  ACTION_PROPRIO_NORMALIZATION_TYPE = {ACTION_PROPRIO_NORMALIZATION_TYPE}")
-print("If needed, manually set the correct constants in `prismatic/vla/constants.py`!")
+print("If needed, manually set the correct constants in `/verl/utils/vla_utils/openvla_oft/constants.py`!")

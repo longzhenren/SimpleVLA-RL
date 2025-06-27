@@ -1,34 +1,35 @@
 set -x
 
 export NCCL_DEBUG=WARN 
-export WANDB_API_KEY='YOUR WANDB KEY'
+export WANDB_API_KEY='8ed142076b0240d918d08f5dbc92ba22a77d0416'
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=true
 export CUDA_LAUNCH_BLOCKING=1
 export TORCH_USE_CUDA_DSA=1
 
-PROJECT_NAME='SimpleVLA-RL'
+PROJECT_NAME='SimpleVLA-RL-robotwin'
 EXPERIMENT_NAME='robotwin_test' 
 # For openvla-oft Libero-Long traj1 SFT or traj all SFT models can be find in https://huggingface.co/collections/Haozhan72/simplevla-rl-6833311430cd9df52aeb1f86
-SFT_MODEL_PATH="/mnt/public/cjh/models/Openvla-oft/Openvla-oft-SFT-libero10-trajall"
-CKPT_PATH="/mnt/public/cjh/models/Openvla-oft/Robotwin_RL"
+SFT_MODEL_PATH="/mnt/petrelfs/lihaozhan/Ckpts/Openvla-oft-robotwin/17tasks_image1_noproprio_nofilm_aloha_25chunks_50k_chkpt"
+CKPT_PATH="/mnt/petrelfs/lihaozhan/Ckpts/oft-robotwin-rl"
 # DATASET_NAME can be libero_10 (libero_Long), libero_90, libero_spatial, libero_object, libero_goal
 DATASET_NAME="robotwin_block_hammer_beat"
 VLA_NAME="openvla-oft"
 NUM_GPUS=8
 # If you want to use 2*8 GPU to RL. Set NUM_NODES=2
 NUM_NODES=1 
-ALIGN_PATH="/mnt/public/cjh/SimpleVLA-RL/align.json"
+ALIGN_PATH="/mnt/petrelfs/lihaozhan/Rob/SimpleVLA-RL-robotwin/align.json"
+
 
 HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
     data.task_suite_name=$DATASET_NAME \
-    data.num_trials_per_task=64 \
+    data.num_trials_per_task=640 \
     data.n_samples=8 \
     data.filter_accuracy=True \
     data.accuracy_lower_bound=0.1 \
     data.accuracy_upper_bound=0.9 \
     data.oversample_factor=1 \
-    data.train_batch_size=64 \
+    data.train_batch_size=32 \
     data.val_batch_size=64 \
     data.max_prompt_length=256 \
     data.max_response_length=128 \
@@ -47,17 +48,18 @@ HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.grad_clip=1 \
     actor_rollout_ref.actor.clip_ratio_high=0.28 \
     actor_rollout_ref.actor.clip_ratio_low=0.2 \
-    actor_rollout_ref.actor.num_images_in_input=3 \
+    actor_rollout_ref.actor.num_images_in_input=1 \
     actor_rollout_ref.actor.traj_mini_batch_size=16 \
     actor_rollout_ref.model.enable_gradient_checkpointing=False \
     actor_rollout_ref.model.use_remove_padding=False \
     actor_rollout_ref.actor.entropy_coeff=0. \
     actor_rollout_ref.rollout.num_images_in_input=1 \
+    actor_rollout_ref.rollout.use_proprio=False \
     actor_rollout_ref.rollout.val_micro_batch_size=8 \
     actor_rollout_ref.rollout.temperature=1.6 \
     actor_rollout_ref.rollout.experiment_name=$EXPERIMENT_NAME \
     actor_rollout_ref.rollout.micro_batch_size=1 \
-    actor_rollout_ref.rollout.unnorm_key=$DATASET_NAME \
+    actor_rollout_ref.rollout.unnorm_key=robotwin_robotwin_17_tasks \
     actor_rollout_ref.rollout.model_family=openvla \
     actor_rollout_ref.rollout.task_suite_name=$DATASET_NAME \
     actor_rollout_ref.rollout.num_steps_wait=10 \
@@ -85,7 +87,7 @@ HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
     algorithm.adv_params.verifier_gamma=1.0 \
     algorithm.adv_params.reward_model_gamma=1.0 \
     trainer.runtime_env=$ALIGN_PATH \
-    trainer.wandb_mode=online \
-    trainer.val_before_train=True \
+    trainer.wandb_mode=offline \
+    trainer.val_before_train=False \
 
 

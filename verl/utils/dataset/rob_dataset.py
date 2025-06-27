@@ -28,7 +28,7 @@ from verl.utils.fs import copy_local_path_from_hdfs
 
 from verl.utils.model import compute_position_id_with_mask
 import verl.utils.torch_functional as verl_F
-from libero.libero import benchmark
+#from libero.libero import benchmark
 
 
 def collate_fn(data_list: list[dict]) -> dict:
@@ -108,11 +108,14 @@ class LIBERO_Dataset(Dataset):
         return self.dataframe[item]
 
 class Robotwin_Dataset(Dataset):
-    def __init__(self, task_name, num_trials_per_task=50):
+    def __init__(self, task_name, num_trials_per_task=50,train_val ="train"):
         self.task_name = task_name  
         self.all_task_names = ["block_hammer_beat", "block_handover", "blocks_stack_easy", "blocks_stack_hard", "bottle_adjust", "container_place", "diverse_bottles_pick", "dual_bottles_pick_easy", "dual_bottles_pick_hard", "dual_shoes_place", "empty_cup_place", "mug_hanging_easy", "mug_hanging_hard", "pick_apple_messy", "put_apple_cabinet", "shoe_place", "tool_adjust"]
         self.all_task_names = ["robotwin_" + name for name in self.all_task_names]
         self.num_trials_per_task = num_trials_per_task  
+        if train_val == "valid":
+            self.num_trials_per_task=64
+        self.start_seed_id = 100000
         self._read_files_and_tokenize()
 
     def _read_files_and_tokenize(self):
@@ -122,24 +125,24 @@ class Robotwin_Dataset(Dataset):
                 data = {
                     "task_suite_name": self.task_name,
                     "task_id": torch.tensor(-1, dtype=torch.int64).unsqueeze(0),
-                    "trial_id": torch.tensor(i, dtype=torch.int64).unsqueeze(0),
-                    "trial_seed": torch.tensor(i, dtype=torch.int64).unsqueeze(0)
+                    "trial_id": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0),
+                    "trial_seed": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0) 
                 }
                 dataframes.append(data)
             self.dataframe = dataframes
             print(f'dataset len: {len(self.dataframe)}')
-        elif self.task_name == "robotwin_all":
-            # For robotwin_all, we iterate through all tasks and trials
-            for task_name in self.all_task_names:
-                for i in range(0, int(self.num_trials_per_task)):
-                    data = {
-                        "task_suite_name": task_name,
-                        "trial_id": torch.tensor(i, dtype=torch.int64).unsqueeze(0),
-                        "trial_seed": torch.tensor(i, dtype=torch.int64).unsqueeze(0)
-                    }
-                    dataframes.append(data)
-            self.dataframe = dataframes
-            print(f'dataset len: {len(self.dataframe)}')
+        # elif self.task_name == "robotwin_all":
+        #     # For robotwin_all, we iterate through all tasks and trials
+        #     for task_name in self.all_task_names:
+        #         for i in range(0, int(self.num_trials_per_task)):
+        #             data = {
+        #                 "task_suite_name": task_name,
+        #                 "trial_id": torch.tensor(i, dtype=torch.int64).unsqueeze(0),
+        #                 "trial_seed": torch.tensor(i, dtype=torch.int64).unsqueeze(0)
+        #             }
+        #             dataframes.append(data)
+        #     self.dataframe = dataframes
+        #     print(f'dataset len: {len(self.dataframe)}')
         else:
             raise ValueError
      

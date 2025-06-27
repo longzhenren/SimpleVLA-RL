@@ -89,6 +89,7 @@ actor_rollout_ref:
     model_family: openvla
     task_suite_name: libero_10
     num_steps_wait: 10
+    use_proprio: False
     pretrained_checkpoint: None
     center_crop: True
     max_prompt_length: 512

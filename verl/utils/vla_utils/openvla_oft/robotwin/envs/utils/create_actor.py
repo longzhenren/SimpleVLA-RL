@@ -3,6 +3,8 @@ import numpy as np
 import transforms3d as t3d
 import sapien.physx as sapienp
 import json
+import os
+import sys
 
 # create box
 def create_box(
@@ -165,7 +167,7 @@ def create_obj(
     model_id = None,
     model_z_val = False
 ) -> sapien.Entity:
-    modeldir = "./models/"+modelname+"/"
+    modeldir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "models", modelname)+"/" # "./models/"+modelname+"/" 
     if model_id is None:
         file_name = modeldir + "textured.obj"
         json_file_path = modeldir + 'model_data.json'
@@ -220,7 +222,7 @@ def create_glb(
     model_id = None,
     model_z_val = False
 ) -> sapien.Entity:
-    modeldir = "./models/"+modelname+"/"
+    modeldir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "models",modelname)+"/" # "./models/"+modelname+"/" 
     if model_id is None:
         file_name = modeldir + "base.glb"
         json_file_path = modeldir + 'model_data.json'
@@ -311,7 +313,7 @@ def create_urdf_obj(
     scale = 1.0,
     fix_root_link = True
 )->sapienp.PhysxArticulation: 
-    modeldir = "./models/"+modelname+"/"
+    modeldir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "models",modelname)+"/" # "./models/"+modelname+"/" 
     file_name = modeldir + "base.glb"
     json_file_path = modeldir + 'model_data.json'
     
@@ -326,7 +328,7 @@ def create_urdf_obj(
     loader.scale = scale
     loader.fix_root_link = fix_root_link
     loader.load_multiple_collisions_from_file = True
-    modeldir = "./models/"+modelname+"/"
+    modeldir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "models",modelname)+"/" # "./models/"+modelname+"/" 
     object: sapien.Articulation = loader.load(modeldir+"mobility.urdf")
     
     object.set_root_pose(pose)

@@ -35,12 +35,13 @@ from .base import BaseRollout
 from transformers import GenerationConfig, AutoProcessor
 
 # from verl.utils.libero_utils import get_libero_env, get_libero_dummy_action, get_image_resize_size, get_libero_image, get_libero_wrist_image, quat2axisangle, normalize_gripper_action, invert_gripper_action, save_rollout_video
+from verl.utils.libero_utils import save_rollout_video
 import numpy as np
 from PIL import Image
 import tensorflow as tf
 from verl import DataProto
-from libero.libero import benchmark
-from codetiming import Timer
+#from libero.libero import benchmark
+#from codetiming import Timer
 from collections import deque
 import random
 import yaml
@@ -281,6 +282,11 @@ def get_robotwin_task(task_name, config):
     return env_instance, args
 
 def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue, output_queue, is_valid, __, ___):    
+    #print("enter env_worker_robotwin")
+    # if multiprocessing.get_start_method(allow_none=True) != 'spawn':
+    #     print("multiprocessing not spawn")
+    # else:
+    #     print("multiprocessing is spawn")
     success = False
     current_seed = trial_seed
     while not success:
@@ -290,12 +296,16 @@ def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue,
             current_seed = trial_seed
             while not demo_success:
                 try:
+                    #print(f"Setting up demo with seed {current_seed} for task {task_name}, trial_id {trial_id}")
                     env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
+                    #print(f"Demo setup with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
                     env.play_once()
+                    #print(f"Demo play once with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
                     env.close()
+                    #print(f"Env closed with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
                     demo_success = True
                     success = True
-                    print("Test setup demo success!")
+                    #print("Test setup demo success!")
                 except Exception as e:
                     print(f"setup_demo failed with seed {current_seed}: {e}.\nRetrying...")
                     current_seed += 1
@@ -312,7 +322,7 @@ def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue,
         
     env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
     obs = env.get_obs()
-    print(f"env setup with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
+    #print(f"env setup with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
     
     valid_images = []        
     if is_valid:
@@ -329,7 +339,7 @@ def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue,
         'complete': False,
         'finish_step': 0
     })
-    print(f"env initialized with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
+    #print(f"env initialized with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
     
     active = True
     complete = False
@@ -338,16 +348,17 @@ def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue,
     obs = env.get_obs()
     while True:
         action = input_queue.get()
-        print(f"Received action: {action}")
+        #print(f"Received action: {action}")
+        #print(f"Received action shape: {action.shape}")
         if action is None:
             env.close()
             output_queue.put({'type': 'terminate'})
             break
         
-        done = env._execute_actions_and_check_success(actions, obs)
+        done = env._execute_actions_and_check_success(action, obs)
         obs = env.get_obs()
-        finish_step += actions.shape[0]
-        print(f"Step {finish_step}, done: {done}")
+        finish_step += action.shape[0]
+        #print(f"Step {finish_step}, done: {done}")
         
         step_images = []
         if is_valid:
@@ -409,7 +420,8 @@ class RobHFRollout(BaseRollout):
                                     "libero_object": 512,    # max step length 254
                                     "libero_goal": 512,      # max step length 270
                                     "libero_10": 512,        # max step length 505
-                                    "libero_90": 512         # max step length 373 org 400 now change to 512
+                                    "libero_90": 512,         # max step length 373 org 400 now change to 512
+                                    "robotwin_block_hammer_beat":300
                                 }
         self.processor = AutoProcessor.from_pretrained(config.pretrained_checkpoint, trust_remote_code=True)
         self.vla_preprocess()
@@ -460,6 +472,7 @@ class RobHFRollout(BaseRollout):
     def process_input(self, inputs: list, task_descriptions: list):
         batchdata = {"input_ids": [], "attention_mask": [], "pixel_values": []}  
 
+        #print(f"len(inputs) {len(inputs)} len(task_descriptions) {len(task_descriptions)}")
         for i in range(len(inputs)):
             input = inputs[i]
             task_description = task_descriptions[i]
@@ -480,15 +493,14 @@ class RobHFRollout(BaseRollout):
                     wrist_batch_feature = self.processor(prompt, wrist_image)
                     pixel_values_list.append(wrist_batch_feature["pixel_values"])
 
+            #print(f"len(pixel_values_list) {len(pixel_values_list)}")
+            #print(f"pixel_values_list[0].shape {pixel_values_list[0].shape}")
             batch_feature["pixel_values"] = torch.cat(pixel_values_list, dim=1)
-
-            batchdata["input_ids"].append(batch_feature["input_ids"])
-            batchdata["attention_mask"].append(batch_feature["attention_mask"])
-            batchdata["pixel_values"].append(batch_feature["pixel_values"])                
 
             input_ids = batch_feature["input_ids"]
             attention_mask = batch_feature["attention_mask"]
             pixel_values = batch_feature["pixel_values"]
+            #print(f"batch_feature.shape {pixel_values.shape}")
             
             if not torch.all(input_ids[:, -1] == 29871):
                 input_ids = torch.cat(
@@ -535,6 +547,9 @@ class RobHFRollout(BaseRollout):
             for key in ["input_ids", "attention_mask", "pixel_values"]:
                 batchdata[key] = torch.cat(batchdata[key], dim=0).to(device)
 
+        # for k,v in batchdata.items():
+        #     print(f"In process batchdata name is {k} and value is {v.shape} ")
+        
         return batchdata
    
     def _generate_minibatch(self, prompts):
@@ -545,24 +560,32 @@ class RobHFRollout(BaseRollout):
         trial_id = prompts.batch['trial_id'].repeat_interleave(n_samples, dim=0)
         trial_seed = prompts.batch['trial_seed'].repeat_interleave(n_samples, dim=0)
         task_suite_name = np.repeat(prompts.non_tensor_batch['task_suite_name'], n_samples)
-        max_steps = self.max_steps[self.config.task_suite_name] if "libero" in self.config.task_suite_name else -1
+        #max_steps = self.max_steps[self.config.task_suite_name] if "libero" in self.config.task_suite_name else -1
+        max_steps = self.max_steps[self.config.task_suite_name] 
         batch_size = task_id.size(0)
         is_valid = meta_info.get('n_samples') is None
         global_steps = meta_info.get('global_steps', 0) if is_valid else 0
         
+        import multiprocessing
+        mp_context = multiprocessing.get_context('spawn')
+        
         processes = []
         input_queues = []
         output_queues = []
+        
+        #test
+        #env_worker_robotwin("block_hammer_beat", None, 141, 141, self.config, Queue(), Queue(), False, None, None)
+        #test
         
         for idx in range(batch_size):
             task_name = task_suite_name[idx].removeprefix("robotwin_")
             t_id = task_id[idx][0].item()
             tr_id = trial_id[idx][0].item()
             tr_seed = trial_seed[idx][0].item()
-            input_q = Queue()
-            output_q = Queue()
+            input_q = mp_context.Queue()
+            output_q = mp_context.Queue()
             env_worker = env_worker_libero if "libero" in self.config.task_suite_name else env_worker_robotwin
-            p = Process(
+            p = mp_context.Process(
                 target=env_worker,
                 args=(task_name, t_id, tr_id, tr_seed, self.config, input_q, output_q, is_valid, global_steps, max_steps)
             )
@@ -576,7 +599,7 @@ class RobHFRollout(BaseRollout):
         task_records = []
         valid_video = defaultdict(list)
         for idx in range(batch_size):
-            init_data = output_queues[idx].get(timeout=120)
+            init_data = output_queues[idx].get(timeout=360)
             assert init_data['type'] == 'init'
             task_descriptions.append(init_data["task_description"])
             inputs.append(self._obs_to_input(init_data['obs']))
@@ -674,6 +697,10 @@ class RobHFRollout(BaseRollout):
         batch["complete"] = torch.tensor(batch["complete"], dtype=torch.bool, device=batch['responses'].device)
         batch["finish_step"] = torch.tensor(batch["finish_step"], dtype=torch.int64, device=batch['responses'].device)
         
+        # print(f"batch_size {batch_size}")
+        # for k,v in batch.items():
+        #     print(f"name is {k} and value is {v.shape} ")
+        
         output_batch = TensorDict(
             batch,
             batch_size=batch_size)
@@ -734,6 +761,8 @@ class RobHFRollout(BaseRollout):
                     "pixel_values":pixel_values,
                     "action":actions,
                 }
+            # for k,v in batch.items():
+            #     print(f"In generate one step name is {k} and value is {v.shape} ")
 
             return batch
         
@@ -846,11 +875,14 @@ class RobHFRollout(BaseRollout):
 
         
     def _obs_to_input(self, obs):
-        robotwin_state = obs['joint_action']
-        robotwin_state[6] /= 0.045
-        robotwin_state[13] /= 0.045
-        libero_state = np.concatenate([obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), bs["robot0_gripper_qpos"]])
-        state = libero_state if "libero" in self.config.task_suite_name else robotwin_state
+        if "libero" in self.config.task_suite_name:
+            state = np.concatenate([obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"]])
+        else:
+            state = obs['joint_action']
+            state[6] /= 0.045
+            state[13] /= 0.045
+        #libero_state = np.concatenate([obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"]])
+        #state = libero_state if "libero" in self.config.task_suite_name else robotwin_state
         if self.config.num_images_in_input == 3:
             return {
                 "full_image": obs['observation']['head_camera']['rgb'],

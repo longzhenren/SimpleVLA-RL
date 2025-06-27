@@ -303,9 +303,9 @@ class RayTrainer(object):
         elif "robotwin" in self.config.data.task_suite_name:
             # (cjh) We assume here that data set names are "robotwin_{task_name}" or "robotwin_all"
             self.train_dataset = Robotwin_Dataset(self.config.data.task_suite_name,
-                                                  num_trials_per_task=self.config.data.num_trials_per_task)
+                                                  num_trials_per_task=self.config.data.num_trials_per_task,train_val ="train")
             self.val_dataset = Robotwin_Dataset(self.config.data.task_suite_name,
-                                                num_trials_per_task=self.config.data.num_trials_per_task)
+                                                num_trials_per_task=self.config.data.num_trials_per_task,train_val ="valid")
         else:
             raise ValueError(f'Unsupported task suite name: {self.config.data.task_suite_name}')
 
@@ -524,9 +524,14 @@ class RayTrainer(object):
                             newbatch = DataProto.concat([buffer_batch, newbatch])
                             buffer_batch = []
 
-                        gen_batch = newbatch.select(batch_keys=['task_id', 'trial_id'],
-                                                    non_tensor_batch_keys={"task_suite_name"},
-                                                    meta_info_keys={})
+                        if "robotwin" in self.config.data.task_suite_name:
+                            gen_batch = newbatch.select(batch_keys=['task_id', 'trial_id',"trial_seed"],
+                                                        non_tensor_batch_keys={"task_suite_name"},
+                                                        meta_info_keys={})
+                        else:
+                            gen_batch = newbatch.select(batch_keys=['task_id', 'trial_id'],
+                                                        non_tensor_batch_keys={"task_suite_name"},
+                                                        meta_info_keys={})
  
                         newbatch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(newbatch.batch))],
                                                              dtype=object)

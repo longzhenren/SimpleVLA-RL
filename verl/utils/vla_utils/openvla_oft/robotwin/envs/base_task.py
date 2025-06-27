@@ -20,6 +20,8 @@ from collections import deque
 import cv2
 import torch
 import yaml
+import sys
+import os
 
 TASK_DESCRIPTIONS = {
     "block_hammer_beat": "There is a hammer and a block in the middle of the table. If the block is closer to the left robotic arm, it uses the left arm to pick up the hammer and strike the block; otherwise, it does the opposite.",
@@ -228,7 +230,7 @@ class Base_task(gym.Env):
         loader.fix_root_link = True
 
         self.robot = loader.load(
-            kwargs.get("urdf_path", "./aloha_maniskill_sim/urdf/arx5_description_isaac.urdf")
+            kwargs.get("urdf_path", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "aloha_maniskill_sim/urdf/arx5_description_isaac.urdf"))
         )
 
         # set root pose 
@@ -359,13 +361,13 @@ class Base_task(gym.Env):
             See planner.py for more details on the arguments.
         """
         self.left_planner = mplib.Planner(
-            urdf=kwargs.get("urdf_path", "./aloha_maniskill_sim/urdf/arx5_description_isaac.urdf"),
-            srdf=kwargs.get("srdf_path", "./aloha_maniskill_sim/srdf/arx5_description_isaac.srdf"),
+            urdf=kwargs.get("urdf_path", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "aloha_maniskill_sim/urdf/arx5_description_isaac.urdf")),
+            srdf=kwargs.get("srdf_path", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "aloha_maniskill_sim/srdf/arx5_description_isaac.srdf")),
             move_group=kwargs.get("move_group", "fl_link6"),
         )
         self.right_planner = mplib.Planner(
-            urdf=kwargs.get("urdf_path", "./aloha_maniskill_sim/urdf/arx5_description_isaac.urdf"),
-            srdf=kwargs.get("srdf_path", "./aloha_maniskill_sim/srdf/arx5_description_isaac.srdf"),
+            urdf=kwargs.get("urdf_path", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "aloha_maniskill_sim/urdf/arx5_description_isaac.urdf")),
+            srdf=kwargs.get("srdf_path", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "aloha_maniskill_sim/srdf/arx5_description_isaac.srdf")),
             move_group=kwargs.get("move_group", "fr_link6"),
         )
 
@@ -2239,7 +2241,7 @@ class Base_task(gym.Env):
                     ffmpeg.wait()
                     del ffmpeg
                 # --- End: Finalize Video on Success ---
-                return
+                return success_flag
                 
             if self.actor_pose == False:
                 break
@@ -2252,6 +2254,7 @@ class Base_task(gym.Env):
             ffmpeg.stdin.close()
             ffmpeg.wait()
             del ffmpeg
+        return success_flag
         # --- End: Finalize Video on Fail/Timeout ---
 
     def compress_path(self, path, tolerance=1e-5):
@@ -2264,6 +2267,24 @@ class Base_task(gym.Env):
             compressed.append(compressed[0].copy() + np.random.normal(0, 2e-4, 6))  
             
         return np.array(compressed)
+    
+    def interpolate_gripper(self, left_gripper, left_n_step):
+        if  len(left_gripper) > 20:
+            middle_index = len(left_gripper) // 2
+            middle_value = left_gripper[middle_index]
+
+            first_half_steps = left_n_step // 2
+            second_half_steps = left_n_step - first_half_steps
+
+            first_half = np.linspace(left_gripper[0], middle_value, first_half_steps, endpoint=False)
+            second_half = np.linspace(middle_value, left_gripper[-1], second_half_steps)
+
+            left_gripper_interp = np.concatenate((first_half, second_half))
+        else:
+            
+            left_gripper_interp = np.linspace(left_gripper[0], left_gripper[-1], left_n_step)
+
+        return left_gripper_interp
 
     def _execute_actions_and_check_success(self, actions, obs):
         left_arm_actions, left_gripper, left_current_qpos, left_path = [], [], [], []
@@ -2290,8 +2311,13 @@ class Base_task(gym.Env):
             left_result = dict()
             left_result['position'], left_result['velocity'] = left_pos, left_vel
             left_n_step = left_result["position"].shape[0]
-            left_gripper = np.linspace(left_gripper[0], left_gripper[-1], left_n_step)
+            #left_gripper = np.linspace(left_gripper[0], left_gripper[-1], left_n_step)
+            left_gripper = self.interpolate_gripper(left_gripper, left_n_step)
         except:
+            topp_left_flag = False
+            left_n_step = 1
+        
+        if left_n_step == 0:
             topp_left_flag = False
             left_n_step = 1
             
@@ -2300,7 +2326,8 @@ class Base_task(gym.Env):
             right_result = dict()
             right_result['position'], right_result['velocity'] = right_pos, right_vel
             right_n_step = right_result["position"].shape[0]
-            right_gripper = np.linspace(right_gripper[0], right_gripper[-1], right_n_step)
+            #right_gripper = np.linspace(right_gripper[0], right_gripper[-1], right_n_step)
+            right_gripper = self.interpolate_gripper(right_gripper, right_n_step)
         except:
             topp_right_flag = False
             right_n_step = 1
@@ -2331,7 +2358,7 @@ class Base_task(gym.Env):
                     for joint in self.active_joints[34:36]:
                         joint.set_drive_target(left_gripper[now_left_id])
                         joint.set_drive_velocity_target(0.05)
-                    self.left_gripper_val = left_gripper[now_left_id]
+                        self.left_gripper_val = left_gripper[now_left_id]
                 now_left_id += 1
                 
             if topp_right_flag and now_right_id < right_n_step and now_right_id / right_n_step <= now_left_id / left_n_step:
@@ -2343,7 +2370,7 @@ class Base_task(gym.Env):
                     for joint in self.active_joints[36:38]:
                         joint.set_drive_target(right_gripper[now_right_id])
                         joint.set_drive_velocity_target(0.05)
-                    self.right_gripper_val = right_gripper[now_right_id]
+                        self.right_gripper_val = right_gripper[now_right_id]
                 now_right_id += 1
                 
             self.scene.step()
@@ -2351,15 +2378,16 @@ class Base_task(gym.Env):
             
             if i % 5 == 0:
                 self._update_render()
-            if self.render_freq and i % self.render_freq == 0:
-                self.viewer.render()
+                if self.render_freq and i % self.render_freq == 0:
+                    self.viewer.render()
             i += 1
             
             if self.check_success():
-                return True, actions.shape[0]  # success_flag=True, step_count
-                
-            if self.actor_pose == False:
-                break
+                #return True, actions.shape[0]  # success_flag=True, step_count
+                return True
+            
+            # if self.actor_pose == False:
+            #     break
         
         self._update_render()
         if self.render_freq:
