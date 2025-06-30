@@ -154,10 +154,10 @@ class RobDataParallelPPOActor(BasePPOActor):
                 entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
             
                 assert len(log_probs.shape)==2 and len(entropy.shape)==2 
-                log_probs = log_probs.reshape((batch_size, traj_len*8,7) )
-                entropy = entropy.reshape((batch_size, traj_len*8,7) )
+                log_probs = log_probs.reshape((batch_size, traj_len*self.config.action_chunks_len,self.config.action_token_len) ) #*
+                entropy = entropy.reshape((batch_size, traj_len*self.config.action_chunks_len,self.config.action_token_len) )
 
-                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len*8)
+                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len*self.config.action_chunks_len) #, self.config.action_token_len
                 log_probs, entropy = self.apply_mask_with_grad_control(log_probs, entropy, mask)
                 
                 log_probs = log_probs.reshape((batch_size, traj_len*response_length))
@@ -289,8 +289,8 @@ class RobDataParallelPPOActor(BasePPOActor):
                 entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
 
                 assert len(entropy.shape)==2 
-                entropy = entropy.reshape((batch_size, traj_len*8,7) )
-                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len*8)
+                entropy = entropy.reshape((batch_size, traj_len*self.config.action_chunks_len, self.config.action_token_len) ) 
+                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len*self.config.action_chunks_len) 
                 _, entropy = self.apply_mask_with_grad_control(entropy, entropy, mask)
                 entropy = entropy.reshape((batch_size, traj_len*response_length))
                 return entropy
@@ -451,8 +451,6 @@ class RobDataParallelPPOActor(BasePPOActor):
                 assert traj_len % self.config.traj_mini_batch_size ==0
                 traj_split_num = int(traj_len/self.config.traj_mini_batch_size)
                 
-                
-    
 
                 for i in range(0, traj_len, int(traj_len/traj_split_num)):
                    

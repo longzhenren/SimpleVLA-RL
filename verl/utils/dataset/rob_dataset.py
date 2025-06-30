@@ -115,6 +115,8 @@ class Robotwin_Dataset(Dataset):
         self.num_trials_per_task = num_trials_per_task  
         if train_val == "valid":
             self.num_trials_per_task=64
+        if train_val == "valid" and self.task_name == "robotwin_all":
+            self.num_trials_per_task=16
         self.start_seed_id = 100000
         self._read_files_and_tokenize()
 
@@ -126,23 +128,26 @@ class Robotwin_Dataset(Dataset):
                     "task_suite_name": self.task_name,
                     "task_id": torch.tensor(-1, dtype=torch.int64).unsqueeze(0),
                     "trial_id": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0),
-                    "trial_seed": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0) 
+                    "trial_seed": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0),
+                    "data_source": self.task_name
                 }
                 dataframes.append(data)
             self.dataframe = dataframes
             print(f'dataset len: {len(self.dataframe)}')
-        # elif self.task_name == "robotwin_all":
-        #     # For robotwin_all, we iterate through all tasks and trials
-        #     for task_name in self.all_task_names:
-        #         for i in range(0, int(self.num_trials_per_task)):
-        #             data = {
-        #                 "task_suite_name": task_name,
-        #                 "trial_id": torch.tensor(i, dtype=torch.int64).unsqueeze(0),
-        #                 "trial_seed": torch.tensor(i, dtype=torch.int64).unsqueeze(0)
-        #             }
-        #             dataframes.append(data)
-        #     self.dataframe = dataframes
-        #     print(f'dataset len: {len(self.dataframe)}')
+        elif self.task_name == "robotwin_all":
+            # For robotwin_all, we iterate through all tasks and trials
+            for task_name in self.all_task_names:
+                for i in range(0, int(self.num_trials_per_task)):
+                    data = {
+                        "task_suite_name": task_name,
+                        "task_id": torch.tensor(-1, dtype=torch.int64).unsqueeze(0),
+                        "trial_id": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0),
+                        "trial_seed": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0),
+                        "data_source": task_name
+                    }
+                    dataframes.append(data)
+            self.dataframe = dataframes
+            print(f'dataset len: {len(self.dataframe)}')
         else:
             raise ValueError
      

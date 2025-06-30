@@ -50,6 +50,7 @@ import multiprocessing
 import gc
 from multiprocessing import Process, Queue
 from collections import defaultdict
+import traceback
 
 __all__ = ['RobHFRollout']
 
@@ -282,102 +283,144 @@ def get_robotwin_task(task_name, config):
     return env_instance, args
 
 def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue, output_queue, is_valid, __, ___):    
-    #print("enter env_worker_robotwin")
-    # if multiprocessing.get_start_method(allow_none=True) != 'spawn':
-    #     print("multiprocessing not spawn")
-    # else:
-    #     print("multiprocessing is spawn")
-    success = False
-    current_seed = trial_seed
-    while not success:
+    try:
+        #print("enter env_worker_robotwin")
+        # if multiprocessing.get_start_method(allow_none=True) != 'spawn':
+        #     print("multiprocessing not spawn")
+        # else:
+        #     print("multiprocessing is spawn")
+        success = False
+        current_seed = trial_seed
+        while not success:
+            try:
+                env, args = get_robotwin_task(task_name, config)
+                demo_success = False
+                current_seed = trial_seed
+                while not demo_success:
+                    try:
+                        #print(f"Setting up demo with seed {current_seed} for task {task_name}, trial_id {trial_id}")
+                        env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
+                        #print(f"Demo setup with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
+                        env.play_once()
+                        #print(f"Demo play once with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
+                        env.close()
+                        #print(f"Env closed with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
+                        # demo_success = True
+                        # success = True
+                        #print("Test setup demo success!")
+                    except Exception as e:
+                        print(f"setup_demo failed with seed {current_seed}: {e}.\nRetrying...", flush=True)
+                        env.close()
+                        current_seed += 1
+                        continue
+                    if  env.plan_success and env.check_success() :
+                        demo_success = True
+                        success = True
+                    else:
+                        current_seed += 1
+                    
+            except Exception as e:
+                print(f"*** env initialization failed: {e} ***", flush=True)
+                if 'env' in locals() and env is not None:
+                    try:
+                        env.close()
+                    except Exception as e_close:
+                        print(f"error when closing the env: {e_close}", flush=True)
+                torch.cuda.empty_cache()
+                gc.collect()
+                print("gc collect finish", flush=True)
+        
+        while True:
+            try:
+                env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
+                break
+            except Exception as e:
+                print(f"******IN env setup_demo ERROR {e} ******", flush=True)
+        
         try:
-            env, args = get_robotwin_task(task_name, config)
-            demo_success = False
-            current_seed = trial_seed
-            while not demo_success:
-                try:
-                    #print(f"Setting up demo with seed {current_seed} for task {task_name}, trial_id {trial_id}")
-                    env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
-                    #print(f"Demo setup with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
-                    env.play_once()
-                    #print(f"Demo play once with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
-                    env.close()
-                    #print(f"Env closed with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
-                    demo_success = True
-                    success = True
-                    #print("Test setup demo success!")
-                except Exception as e:
-                    print(f"setup_demo failed with seed {current_seed}: {e}.\nRetrying...")
-                    current_seed += 1
+            env._update_render()
         except Exception as e:
-            print(f"*** env initialization failed: {e} ***")
-            if 'env' in locals() and env is not None:
-                try:
-                    env.close()
-                except Exception as e_close:
-                    print(f"error when closing the env: {e_close}")
-            torch.cuda.empty_cache()
-            gc.collect()
-            print("gc collect finish")
+            print(f"******IN _update_render ERROR {e} ******", flush=True)
+            
+        while True:
+            try:
+                obs = env.get_obs()
+                break
+            except Exception as e:
+                print(f"******IN INIT env.get_obs ERROR {e} ******", flush=True)
+        #print(f"env setup with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
         
-    env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
-    obs = env.get_obs()
-    #print(f"env setup with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
-    
-    valid_images = []        
-    if is_valid:
-        img = obs['observation']['head_camera']['rgb']
-        valid_images.append(img)
-    
-    output_queue.put({
-        'type': 'init',
-        'obs': obs,
-        "task_description": args['task_description'],
-        'valid_images': valid_images.copy(),
-        'task_file_name': f"{task_name}_trial_{trial_id}_seed_{trial_seed}",
-        'active': True,
-        'complete': False,
-        'finish_step': 0
-    })
-    #print(f"env initialized with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
-    
-    active = True
-    complete = False
-    finish_step = 0
-    
-    obs = env.get_obs()
-    while True:
-        action = input_queue.get()
-        #print(f"Received action: {action}")
-        #print(f"Received action shape: {action.shape}")
-        if action is None:
-            env.close()
-            output_queue.put({'type': 'terminate'})
-            break
-        
-        done = env._execute_actions_and_check_success(action, obs)
-        obs = env.get_obs()
-        finish_step += action.shape[0]
-        #print(f"Step {finish_step}, done: {done}")
-        
-        step_images = []
+        valid_images = []        
         if is_valid:
             img = obs['observation']['head_camera']['rgb']
-            step_images.append(img)
+            valid_images.append(img)
         
-        if done or finish_step >= env.step_lim:
-            active = False
-            complete = done
-                
-        output_data = {
-            'type': 'step',
+        output_queue.put({
+            'type': 'init',
             'obs': obs,
-            'active': active,
-            'complete': complete,
-            'finish_step': finish_step,
-            'valid_images': step_images.copy() if is_valid else []
-        }
-        output_queue.put(output_data)
+            "task_description": args['task_description'],
+            'valid_images': valid_images.copy(),
+            'task_file_name': f"{task_name}_trial_{trial_id}_seed_{trial_seed}",
+            'active': True,
+            'complete': False,
+            'finish_step': 0
+        })
+        #print(f"env initialized with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
+        
+        active = True
+        complete = False
+        finish_step = 0
+        
+        env.actor_pose = True
+        #obs = env.get_obs()
+        while True:
+            action = input_queue.get()
+            #print(f"Received action: {action}")
+            #print(f"Received action shape: {action.shape}")
+            if action is None:
+                try:
+                    env.close()
+                except Exception as e:
+                    print(f"******IN env.close ERROR {e} ******", flush=True)
+                    
+                output_queue.put({'type': 'terminate'})
+                break
+            
+            try:
+                done = env._execute_actions_and_check_success(action, obs)
+            except Exception as e:
+                done = False
+                print(f"****** _execute_actions_and_check_success ERROR {e} ******", flush=True)
+            
+            try:
+                obs = env.get_obs()
+            except Exception as e:
+                print(f"****** env.get_obs ERROR {e} ******", flush=True)
+            finish_step += action.shape[0]
+            #print(f"Step {finish_step}, done: {done}")
+            
+            step_images = []
+            if is_valid:
+                img = obs['observation']['head_camera']['rgb']
+                step_images.append(img)
+            
+            if done or finish_step >= env.step_lim or env.actor_pose == False :
+                active = False
+                complete = done
+                    
+            output_data = {
+                'type': 'step',
+                'obs': obs,
+                'active': active,
+                'complete': complete,
+                'finish_step': finish_step,
+                'valid_images': step_images.copy() if is_valid else []
+            }
+            output_queue.put(output_data)
+    except Exception as e:
+        print(f"---***Total Top env_worker_robotwin Error: {e}*****---------", flush=True)
+        print("详细错误信息：", flush=True)
+        traceback.print_exc()  # 这会打印完整的错误堆栈
 
 def normalize_proprio(proprio, norm_stats):
     """
@@ -640,14 +683,28 @@ class RobHFRollout(BaseRollout):
             
             new_inputs = inputs.copy()
             for idx in active_indices:
-                result = output_queues[idx].get(timeout=30)
-                assert result['type'] == 'step'
-                new_inputs[idx] = self._obs_to_input(result['obs'])
-                task_records[idx]['active'] = result['active']
-                task_records[idx]['complete'] = result['complete']
-                task_records[idx]['finish_step'] = result['finish_step']
-                if is_valid:
-                    valid_video[task_records[idx]['task_file_name']].extend(result['valid_images'])
+                try:
+                    result = output_queues[idx].get(timeout=90)
+                    assert result['type'] == 'step'
+                    new_inputs[idx] = self._obs_to_input(result['obs'])
+                    task_records[idx]['active'] = result['active']
+                    task_records[idx]['complete'] = result['complete']
+                    task_records[idx]['finish_step'] = result['finish_step']
+                    if is_valid:
+                        valid_video[task_records[idx]['task_file_name']].extend(result['valid_images'])
+                except Exception as e:
+                    print(f"---***output_queues[idx].get(timeout=90) Error: {e}*****---------", flush=True)
+                    task_records[idx]['active'] = False
+                    task_records[idx]['complete'] = False
+                    task_records[idx]['finish_step'] = step + self.config.action_chunks_len
+                    
+                # assert result['type'] == 'step'
+                # new_inputs[idx] = self._obs_to_input(result['obs'])
+                # task_records[idx]['active'] = result['active']
+                # task_records[idx]['complete'] = result['complete']
+                # task_records[idx]['finish_step'] = result['finish_step']
+                # if is_valid:
+                #     valid_video[task_records[idx]['task_file_name']].extend(result['valid_images'])
             
             inputs = new_inputs
             step += self.config.action_chunks_len

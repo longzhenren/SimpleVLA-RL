@@ -1184,7 +1184,7 @@ class Base_task(gym.Env):
             conbine_pcd = np.vstack((head_pcd , left_pcd , right_pcd, front_pcd))
         else:
             conbine_pcd = head_pcd
-        pcd_array, index = fps(conbine_pcd[:,:3],self.pcd_down_sample_num)
+        #pcd_array, index = fps(conbine_pcd[:,:3],self.pcd_down_sample_num)
 
         obs = {
             "observation":{
@@ -1248,7 +1248,8 @@ class Base_task(gym.Env):
         obs["observation"]["left_camera"]["depth"] = left_depth
         obs["observation"]["right_camera"]["depth"] = right_depth
 
-        obs["pointcloud"] = conbine_pcd[index.detach().cpu().numpy()[0]]
+        #obs["pointcloud"] = conbine_pcd[index.detach().cpu().numpy()[0]]
+        obs["pointcloud"] = None
         obs["endpose"] = np.array([left_endpose["x"],left_endpose["y"],left_endpose["z"],left_endpose["roll"],
                                     left_endpose["pitch"],left_endpose["yaw"],left_endpose["gripper"],
                                     right_endpose["x"],right_endpose["y"],right_endpose["z"],right_endpose["roll"],
@@ -2384,10 +2385,13 @@ class Base_task(gym.Env):
             
             if self.check_success():
                 #return True, actions.shape[0]  # success_flag=True, step_count
+                self._update_render()
+                if self.render_freq:
+                    self.viewer.render()
                 return True
             
-            # if self.actor_pose == False:
-            #     break
+            if self.actor_pose == False:
+                break
         
         self._update_render()
         if self.render_freq:
