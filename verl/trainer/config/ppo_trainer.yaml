@@ -39,6 +39,7 @@ actor_rollout_ref:
     vla: ${actor_rollout_ref.model.vla}
     action_token_len: ${actor_rollout_ref.model.action_token_len}
     action_chunks_len: ${actor_rollout_ref.model.action_chunks_len}
+    use_proprio: ${actor_rollout_ref.rollout.use_proprio}
     strategy: fsdp  # This is for backward-compatibility
     traj_mini_batch_size: 16
     ppo_mini_batch_size: 256

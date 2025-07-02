@@ -1146,14 +1146,126 @@ class Base_task(gym.Env):
 
         self.PCD_INDEX +=1
     
+    # def get_obs(self):
+    #     self.scene.step()
+    #     self._update_render()
+    #     self._update_render()
+    #     obs = collections.OrderedDict()
+        
+    #     left_endpose = self.endpose_transform(self.all_joints[42], self.left_gripper_val)
+    #     right_endpose = self.endpose_transform(self.all_joints[43], self.right_gripper_val)
+
+    #     right_jointState = self.get_right_arm_jointState()
+    #     right_jointState_array = np.array(right_jointState)
+
+    #     left_jointState = self.get_left_arm_jointState()
+    #     left_jointState_array = np.array(left_jointState)
+
+    #     self.left_camera.take_picture()
+    #     self.right_camera.take_picture()
+    #     self.head_camera.take_picture()
+    #     self.front_camera.take_picture()
+
+    #     head_pcd = self._get_camera_pcd(self.head_camera, point_num=0)
+    #     left_pcd = self._get_camera_pcd(self.left_camera, point_num=0)
+    #     right_pcd = self._get_camera_pcd(self.right_camera, point_num=0)
+    #     front_pcd = self._get_camera_pcd(self.front_camera, point_num=0)
+    #     head_rgba = self._get_camera_rgba(self.head_camera)
+    #     left_rgba = self._get_camera_rgba(self.left_camera)
+    #     right_rgba = self._get_camera_rgba(self.right_camera)
+    #     front_rgba = self._get_camera_rgba(self.front_camera)
+    #     head_depth = self._get_camera_depth(self.head_camera)
+    #     left_depth = self._get_camera_depth(self.left_camera)
+    #     right_depth = self._get_camera_depth(self.right_camera)
+    #     front_depth = self._get_camera_depth(self.front_camera)
+
+    #     # Merge PointCloud
+    #     if self.data_type.get("conbine", False):
+    #         conbine_pcd = np.vstack((head_pcd , left_pcd , right_pcd, front_pcd))
+    #     else:
+    #         conbine_pcd = head_pcd
+    #     #pcd_array, index = fps(conbine_pcd[:,:3],self.pcd_down_sample_num)
+
+    #     obs = {
+    #         "observation":{
+    #             "head_camera":{},   # rbg , mesh_seg , actior_seg , depth , intrinsic_cv , extrinsic_cv , cam2world_gl(model_matrix)
+    #             "left_camera":{},
+    #             "right_camera":{},
+    #             "front_camera":{}
+    #         },
+    #         "pointcloud":[],   # conbinet pcd
+    #         "joint_action":[],
+    #         "endpose":[]
+    #     }
+        
+    #     head_camera_intrinsic_cv = self.head_camera.get_intrinsic_matrix()
+    #     head_camera_extrinsic_cv = self.head_camera.get_extrinsic_matrix()
+    #     head_camera_model_matrix = self.head_camera.get_model_matrix()
+
+    #     obs["observation"]["head_camera"] = {
+    #         "intrinsic_cv" : head_camera_intrinsic_cv,
+    #         "extrinsic_cv" : head_camera_extrinsic_cv,
+    #         "cam2world_gl" : head_camera_model_matrix
+    #     }
+
+    #     front_camera_intrinsic_cv = self.front_camera.get_intrinsic_matrix()
+    #     front_camera_extrinsic_cv = self.front_camera.get_extrinsic_matrix()
+    #     front_camera_model_matrix = self.front_camera.get_model_matrix()
+
+    #     obs["observation"]["front_camera"] = {
+    #         "intrinsic_cv" : front_camera_intrinsic_cv,
+    #         "extrinsic_cv" : front_camera_extrinsic_cv,
+    #         "cam2world_gl" : front_camera_model_matrix
+    #     }
+
+    #     left_camera_intrinsic_cv = self.left_camera.get_intrinsic_matrix()
+    #     left_camera_extrinsic_cv = self.left_camera.get_extrinsic_matrix()
+    #     left_camera_model_matrix = self.left_camera.get_model_matrix()
+
+    #     obs["observation"]["left_camera"] = {
+    #         "intrinsic_cv" : left_camera_intrinsic_cv,
+    #         "extrinsic_cv" : left_camera_extrinsic_cv,
+    #         "cam2world_gl" : left_camera_model_matrix
+    #     }
+
+    #     right_camera_intrinsic_cv = self.right_camera.get_intrinsic_matrix()
+    #     right_camera_extrinsic_cv = self.right_camera.get_extrinsic_matrix()
+    #     right_camera_model_matrix = self.right_camera.get_model_matrix()
+
+    #     obs["observation"]["right_camera"] = {
+    #         "intrinsic_cv" : right_camera_intrinsic_cv,
+    #         "extrinsic_cv" : right_camera_extrinsic_cv,
+    #         "cam2world_gl" : right_camera_model_matrix
+    #     }
+
+    #     obs["observation"]["head_camera"]["rgb"] = head_rgba[:,:,:3]
+    #     obs["observation"]["front_camera"]["rgb"] = front_rgba[:,:,:3]
+    #     obs["observation"]["left_camera"]["rgb"] = left_rgba[:,:,:3]
+    #     obs["observation"]["right_camera"]["rgb"] = right_rgba[:,:,:3]
+
+    #     obs["observation"]["head_camera"]["depth"] = head_depth
+    #     obs["observation"]["front_camera"]["depth"] = front_depth
+    #     obs["observation"]["left_camera"]["depth"] = left_depth
+    #     obs["observation"]["right_camera"]["depth"] = right_depth
+
+    #     #obs["pointcloud"] = conbine_pcd[index.detach().cpu().numpy()[0]]
+    #     obs["pointcloud"] = None
+    #     obs["endpose"] = np.array([left_endpose["x"],left_endpose["y"],left_endpose["z"],left_endpose["roll"],
+    #                                 left_endpose["pitch"],left_endpose["yaw"],left_endpose["gripper"],
+    #                                 right_endpose["x"],right_endpose["y"],right_endpose["z"],right_endpose["roll"],
+    #                                 right_endpose["pitch"],right_endpose["yaw"],right_endpose["gripper"],])
+    #     obs["joint_action"] = np.hstack((left_jointState_array, right_jointState_array))
+
+    #     return obs
+    
     def get_obs(self):
         self.scene.step()
         self._update_render()
         self._update_render()
         obs = collections.OrderedDict()
         
-        left_endpose = self.endpose_transform(self.all_joints[42], self.left_gripper_val)
-        right_endpose = self.endpose_transform(self.all_joints[43], self.right_gripper_val)
+        #left_endpose = self.endpose_transform(self.all_joints[42], self.left_gripper_val)
+        #right_endpose = self.endpose_transform(self.all_joints[43], self.right_gripper_val)
 
         right_jointState = self.get_right_arm_jointState()
         right_jointState_array = np.array(right_jointState)
@@ -1161,29 +1273,29 @@ class Base_task(gym.Env):
         left_jointState = self.get_left_arm_jointState()
         left_jointState_array = np.array(left_jointState)
 
-        self.left_camera.take_picture()
-        self.right_camera.take_picture()
+        #self.left_camera.take_picture()
+        #self.right_camera.take_picture()
         self.head_camera.take_picture()
-        self.front_camera.take_picture()
+        #self.front_camera.take_picture()
 
-        head_pcd = self._get_camera_pcd(self.head_camera, point_num=0)
-        left_pcd = self._get_camera_pcd(self.left_camera, point_num=0)
-        right_pcd = self._get_camera_pcd(self.right_camera, point_num=0)
-        front_pcd = self._get_camera_pcd(self.front_camera, point_num=0)
+        #head_pcd = self._get_camera_pcd(self.head_camera, point_num=0)
+        #left_pcd = self._get_camera_pcd(self.left_camera, point_num=0)
+        #right_pcd = self._get_camera_pcd(self.right_camera, point_num=0)
+        #front_pcd = self._get_camera_pcd(self.front_camera, point_num=0)
         head_rgba = self._get_camera_rgba(self.head_camera)
-        left_rgba = self._get_camera_rgba(self.left_camera)
-        right_rgba = self._get_camera_rgba(self.right_camera)
-        front_rgba = self._get_camera_rgba(self.front_camera)
-        head_depth = self._get_camera_depth(self.head_camera)
-        left_depth = self._get_camera_depth(self.left_camera)
-        right_depth = self._get_camera_depth(self.right_camera)
-        front_depth = self._get_camera_depth(self.front_camera)
+        #left_rgba = self._get_camera_rgba(self.left_camera)
+        #right_rgba = self._get_camera_rgba(self.right_camera)
+        #front_rgba = self._get_camera_rgba(self.front_camera)
+        #head_depth = self._get_camera_depth(self.head_camera)
+        #left_depth = self._get_camera_depth(self.left_camera)
+        #right_depth = self._get_camera_depth(self.right_camera)
+        #front_depth = self._get_camera_depth(self.front_camera)
 
         # Merge PointCloud
-        if self.data_type.get("conbine", False):
-            conbine_pcd = np.vstack((head_pcd , left_pcd , right_pcd, front_pcd))
-        else:
-            conbine_pcd = head_pcd
+        # if self.data_type.get("conbine", False):
+        #     conbine_pcd = np.vstack((head_pcd , left_pcd , right_pcd, front_pcd))
+        # else:
+        #     conbine_pcd = head_pcd
         #pcd_array, index = fps(conbine_pcd[:,:3],self.pcd_down_sample_num)
 
         obs = {
@@ -1198,65 +1310,67 @@ class Base_task(gym.Env):
             "endpose":[]
         }
         
-        head_camera_intrinsic_cv = self.head_camera.get_intrinsic_matrix()
-        head_camera_extrinsic_cv = self.head_camera.get_extrinsic_matrix()
-        head_camera_model_matrix = self.head_camera.get_model_matrix()
+        # head_camera_intrinsic_cv = self.head_camera.get_intrinsic_matrix()
+        # head_camera_extrinsic_cv = self.head_camera.get_extrinsic_matrix()
+        # head_camera_model_matrix = self.head_camera.get_model_matrix()
 
-        obs["observation"]["head_camera"] = {
-            "intrinsic_cv" : head_camera_intrinsic_cv,
-            "extrinsic_cv" : head_camera_extrinsic_cv,
-            "cam2world_gl" : head_camera_model_matrix
-        }
+        # obs["observation"]["head_camera"] = {
+        #     "intrinsic_cv" : head_camera_intrinsic_cv,
+        #     "extrinsic_cv" : head_camera_extrinsic_cv,
+        #     "cam2world_gl" : head_camera_model_matrix
+        # }
 
-        front_camera_intrinsic_cv = self.front_camera.get_intrinsic_matrix()
-        front_camera_extrinsic_cv = self.front_camera.get_extrinsic_matrix()
-        front_camera_model_matrix = self.front_camera.get_model_matrix()
+        # front_camera_intrinsic_cv = self.front_camera.get_intrinsic_matrix()
+        # front_camera_extrinsic_cv = self.front_camera.get_extrinsic_matrix()
+        # front_camera_model_matrix = self.front_camera.get_model_matrix()
 
-        obs["observation"]["front_camera"] = {
-            "intrinsic_cv" : front_camera_intrinsic_cv,
-            "extrinsic_cv" : front_camera_extrinsic_cv,
-            "cam2world_gl" : front_camera_model_matrix
-        }
+        # obs["observation"]["front_camera"] = {
+        #     "intrinsic_cv" : front_camera_intrinsic_cv,
+        #     "extrinsic_cv" : front_camera_extrinsic_cv,
+        #     "cam2world_gl" : front_camera_model_matrix
+        # }
 
-        left_camera_intrinsic_cv = self.left_camera.get_intrinsic_matrix()
-        left_camera_extrinsic_cv = self.left_camera.get_extrinsic_matrix()
-        left_camera_model_matrix = self.left_camera.get_model_matrix()
+        # left_camera_intrinsic_cv = self.left_camera.get_intrinsic_matrix()
+        # left_camera_extrinsic_cv = self.left_camera.get_extrinsic_matrix()
+        # left_camera_model_matrix = self.left_camera.get_model_matrix()
 
-        obs["observation"]["left_camera"] = {
-            "intrinsic_cv" : left_camera_intrinsic_cv,
-            "extrinsic_cv" : left_camera_extrinsic_cv,
-            "cam2world_gl" : left_camera_model_matrix
-        }
+        # obs["observation"]["left_camera"] = {
+        #     "intrinsic_cv" : left_camera_intrinsic_cv,
+        #     "extrinsic_cv" : left_camera_extrinsic_cv,
+        #     "cam2world_gl" : left_camera_model_matrix
+        # }
 
-        right_camera_intrinsic_cv = self.right_camera.get_intrinsic_matrix()
-        right_camera_extrinsic_cv = self.right_camera.get_extrinsic_matrix()
-        right_camera_model_matrix = self.right_camera.get_model_matrix()
+        # right_camera_intrinsic_cv = self.right_camera.get_intrinsic_matrix()
+        # right_camera_extrinsic_cv = self.right_camera.get_extrinsic_matrix()
+        # right_camera_model_matrix = self.right_camera.get_model_matrix()
 
-        obs["observation"]["right_camera"] = {
-            "intrinsic_cv" : right_camera_intrinsic_cv,
-            "extrinsic_cv" : right_camera_extrinsic_cv,
-            "cam2world_gl" : right_camera_model_matrix
-        }
+        # obs["observation"]["right_camera"] = {
+        #     "intrinsic_cv" : right_camera_intrinsic_cv,
+        #     "extrinsic_cv" : right_camera_extrinsic_cv,
+        #     "cam2world_gl" : right_camera_model_matrix
+        # }
 
         obs["observation"]["head_camera"]["rgb"] = head_rgba[:,:,:3]
-        obs["observation"]["front_camera"]["rgb"] = front_rgba[:,:,:3]
-        obs["observation"]["left_camera"]["rgb"] = left_rgba[:,:,:3]
-        obs["observation"]["right_camera"]["rgb"] = right_rgba[:,:,:3]
+        # obs["observation"]["front_camera"]["rgb"] = front_rgba[:,:,:3]
+        # obs["observation"]["left_camera"]["rgb"] = left_rgba[:,:,:3]
+        # obs["observation"]["right_camera"]["rgb"] = right_rgba[:,:,:3]
 
-        obs["observation"]["head_camera"]["depth"] = head_depth
-        obs["observation"]["front_camera"]["depth"] = front_depth
-        obs["observation"]["left_camera"]["depth"] = left_depth
-        obs["observation"]["right_camera"]["depth"] = right_depth
+        #obs["observation"]["head_camera"]["depth"] = head_depth
+        # obs["observation"]["front_camera"]["depth"] = front_depth
+        # obs["observation"]["left_camera"]["depth"] = left_depth
+        # obs["observation"]["right_camera"]["depth"] = right_depth
 
         #obs["pointcloud"] = conbine_pcd[index.detach().cpu().numpy()[0]]
         obs["pointcloud"] = None
-        obs["endpose"] = np.array([left_endpose["x"],left_endpose["y"],left_endpose["z"],left_endpose["roll"],
-                                    left_endpose["pitch"],left_endpose["yaw"],left_endpose["gripper"],
-                                    right_endpose["x"],right_endpose["y"],right_endpose["z"],right_endpose["roll"],
-                                    right_endpose["pitch"],right_endpose["yaw"],right_endpose["gripper"],])
+        # obs["endpose"] = np.array([left_endpose["x"],left_endpose["y"],left_endpose["z"],left_endpose["roll"],
+        #                             left_endpose["pitch"],left_endpose["yaw"],left_endpose["gripper"],
+        #                             right_endpose["x"],right_endpose["y"],right_endpose["z"],right_endpose["roll"],
+        #                             right_endpose["pitch"],right_endpose["yaw"],right_endpose["gripper"],])
         obs["joint_action"] = np.hstack((left_jointState_array, right_jointState_array))
 
         return obs
+    
+    
         
     def get_cam_obs(self, observation: dict) -> dict:
         head_cam = np.moveaxis(observation['observation']['head_camera']['rgb'], -1, 0) / 255
@@ -2286,6 +2400,22 @@ class Base_task(gym.Env):
             left_gripper_interp = np.linspace(left_gripper[0], left_gripper[-1], left_n_step)
 
         return left_gripper_interp
+    
+    def downsample_trajectory(self, positions, velocities, max_points=450):
+       
+        n_points = positions.shape[0]
+        assert positions.shape[0] == velocities.shape[0]
+        if n_points <= max_points:
+            return positions, velocities
+        
+        # 使用 linspace 生成均匀分布的索引，包含起点和终点
+        indices = np.linspace(0, n_points - 1, max_points).astype(int)
+        
+        # 去除可能的重复索引
+        indices = np.unique(indices)
+        
+        return positions[indices], velocities[indices]
+    
 
     def _execute_actions_and_check_success(self, actions, obs):
         left_arm_actions, left_gripper, left_current_qpos, left_path = [], [], [], []
@@ -2310,6 +2440,9 @@ class Base_task(gym.Env):
         try:
             times, left_pos, left_vel, acc, duration = self.left_planner.TOPP(left_path, 1/250, verbose=True)
             left_result = dict()
+            
+            left_pos, left_vel = self.downsample_trajectory(left_pos, left_vel)
+            
             left_result['position'], left_result['velocity'] = left_pos, left_vel
             left_n_step = left_result["position"].shape[0]
             #left_gripper = np.linspace(left_gripper[0], left_gripper[-1], left_n_step)
@@ -2325,6 +2458,9 @@ class Base_task(gym.Env):
         try:
             times, right_pos, right_vel, acc, duration = self.right_planner.TOPP(right_path, 1/250, verbose=True)
             right_result = dict()
+            
+            right_pos, right_vel = self.downsample_trajectory(right_pos, right_vel)
+            
             right_result['position'], right_result['velocity'] = right_pos, right_vel
             right_n_step = right_result["position"].shape[0]
             #right_gripper = np.linspace(right_gripper[0], right_gripper[-1], right_n_step)

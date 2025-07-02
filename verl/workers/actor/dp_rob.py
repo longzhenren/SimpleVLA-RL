@@ -118,7 +118,8 @@ class RobDataParallelPPOActor(BasePPOActor):
         assert all(micro_batch[key].size(0) == batch_size for key in ['responses', 'input_ids', 'attention_mask', 'pixel_values'])
         assert all(micro_batch[key].size(1) == traj_len for key in ['responses', 'input_ids', 'attention_mask', 'pixel_values'])
         assert all(micro_batch[key].size(2) == tot_pad_len for key in [ 'input_ids', 'attention_mask'])
-        
+        if self.config.use_proprio:
+            assert micro_batch["proprio"].size(0) == batch_size and micro_batch["proprio"].size(1) == traj_len and micro_batch["proprio"].size(2) == self.config.action_token_len
             
         response_length = micro_batch['responses'].size(-1) # 7*8
         
@@ -133,6 +134,12 @@ class RobDataParallelPPOActor(BasePPOActor):
             pixel_values = pixel_values.reshape((batch_size * traj_len,) + pixel_values.shape[2:])
             responses = responses.reshape((batch_size * traj_len,) + responses.shape[2:])
             
+            if self.config.use_proprio:
+                proprio = micro_batch["proprio"]
+                proprio = proprio.reshape((batch_size * traj_len,) + proprio.shape[2:])
+            else:
+                proprio = None
+            
             input_ids_unpad, _ = self.process_tensor(input_ids, self.pad_token_id)
             attention_mask_unpad, _ = self.process_tensor(attention_mask, 0)
             
@@ -140,6 +147,7 @@ class RobDataParallelPPOActor(BasePPOActor):
                 logits = self.actor_module(input_ids=input_ids_unpad,
                                         attention_mask=attention_mask_unpad,
                                         pixel_values=pixel_values,
+                                        proprio=proprio,
                                         )  # prevent model thinks we are generating
                 
                 assert self.actor_module.vocab_size == 32000
@@ -191,7 +199,7 @@ class RobDataParallelPPOActor(BasePPOActor):
 
             return entropy, log_probs
     
-    def _forward_micro_batch_update(self, input_ids, attention_mask, pixel_values, responses, temperature) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _forward_micro_batch_update(self, input_ids, attention_mask, pixel_values, responses, temperature, proprio) -> Tuple[torch.Tensor, torch.Tensor]:
        
         
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
@@ -204,6 +212,7 @@ class RobDataParallelPPOActor(BasePPOActor):
                 logits = self.actor_module(input_ids=input_ids_unpad,
                                                 attention_mask=attention_mask_unpad,
                                                 pixel_values=pixel_values,
+                                                proprio=proprio,
                                                 )  
                 
                 assert logits.requires_grad 
@@ -256,6 +265,9 @@ class RobDataParallelPPOActor(BasePPOActor):
         assert all(micro_batch[key].size(1) == traj_len for key in ['responses', 'input_ids', 'attention_mask', 'pixel_values'])
         assert all(micro_batch[key].size(2) == tot_pad_len for key in [ 'input_ids', 'attention_mask'])
             
+        if self.config.use_proprio:
+            assert micro_batch["proprio"].size(0) == batch_size and micro_batch["proprio"].size(1) == traj_len and micro_batch["proprio"].size(2) == self.config.action_token_len
+            
         response_length = micro_batch['responses'].size(-1)
         #assert response_length == 7*8
         
@@ -269,6 +281,11 @@ class RobDataParallelPPOActor(BasePPOActor):
             attention_mask = attention_mask.reshape((batch_size * traj_len,) + attention_mask.shape[2:])
             pixel_values = pixel_values.reshape((batch_size * traj_len,) + pixel_values.shape[2:])
             
+            if self.config.use_proprio:
+                proprio = micro_batch["proprio"]
+                proprio = proprio.reshape((batch_size * traj_len,) + proprio.shape[2:])
+            else:
+                proprio = None
             
             input_ids_unpad, _ = self.process_tensor(input_ids, self.pad_token_id)
             attention_mask_unpad, _ = self.process_tensor(attention_mask, 0)
@@ -278,6 +295,7 @@ class RobDataParallelPPOActor(BasePPOActor):
                 logits = self.actor_module(input_ids=input_ids_unpad,
                                                 attention_mask=attention_mask_unpad,
                                                 pixel_values=pixel_values,
+                                                proprio=proprio,
                                                 ) 
             
                 assert self.actor_module.vocab_size == 32000
@@ -354,6 +372,8 @@ class RobDataParallelPPOActor(BasePPOActor):
         self.pad_token_id = data.meta_info['pad_token_id']
         
         select_keys = ['responses', 'input_ids', 'attention_mask', 'pixel_values',"finish_step"]
+        if self.config.use_proprio:
+            select_keys.append("proprio")
         batch = data.select(batch_keys=select_keys).batch
 
         if use_dynamic_bsz:
@@ -386,6 +406,8 @@ class RobDataParallelPPOActor(BasePPOActor):
         temperature = data.meta_info['temperature']  # temperature must be in the data.meta_info to avoid slient error
 
         select_keys = ['responses', 'input_ids', 'attention_mask', 'pixel_values', 'old_log_probs', 'advantages',"finish_step"]
+        if self.config.use_proprio:
+            select_keys.append("proprio")
         batch = data.select(batch_keys=select_keys).batch
         assert self.config.ppo_micro_batch_size == 1
 
@@ -441,6 +463,13 @@ class RobDataParallelPPOActor(BasePPOActor):
                 pixel_values = pixel_values.reshape((batch_size * traj_len,) + pixel_values.shape[2:])
                 responses = responses.reshape((batch_size * traj_len,) + responses.shape[2:])
                 
+                if self.config.use_proprio:
+                    proprio = data["proprio"]
+                    proprio = proprio.reshape((batch_size * traj_len,) + proprio.shape[2:])
+                else:
+                    proprio = None
+                
+                
                 loss_info = {
                     #'actor/entropy_loss': entropy_loss.detach().item(),
                     'actor/pg_loss':0,
@@ -454,7 +483,12 @@ class RobDataParallelPPOActor(BasePPOActor):
 
                 for i in range(0, traj_len, int(traj_len/traj_split_num)):
                    
-                    entropy, log_prob = self._forward_micro_batch_update(input_ids=input_ids[i:i+int(traj_len/traj_split_num)], attention_mask=attention_mask[i:i+int(traj_len/traj_split_num)], pixel_values=pixel_values[i:i+int(traj_len/traj_split_num)], responses=responses[i:i+int(traj_len/traj_split_num)], temperature=temperature)
+                    entropy, log_prob = self._forward_micro_batch_update(input_ids=input_ids[i:i+int(traj_len/traj_split_num)], 
+                                                                         attention_mask=attention_mask[i:i+int(traj_len/traj_split_num)], 
+                                                                         pixel_values=pixel_values[i:i+int(traj_len/traj_split_num)], 
+                                                                         responses=responses[i:i+int(traj_len/traj_split_num)], 
+                                                                         temperature=temperature,
+                                                                         proprio=proprio[i:i+int(traj_len/traj_split_num)] if proprio is not None  else None)
                     
                     slice_id = i*self.config.action_token_len*self.config.action_chunks_len
                     next_slice_id = (i+int(traj_len/traj_split_num))*self.config.action_token_len*self.config.action_chunks_len
@@ -511,6 +545,8 @@ class RobDataParallelPPOActor(BasePPOActor):
         temperature = bacth_data.meta_info['temperature']  # temperature must be in the data.meta_info to avoid slient error
 
         select_keys = ['responses', 'input_ids', 'attention_mask', 'pixel_values', "finish_step"]
+        if self.config.use_proprio:
+            select_keys.append("proprio")
         batch = bacth_data.select(batch_keys=select_keys).batch
 
         # Split to make minibatch iterator for updating the actor

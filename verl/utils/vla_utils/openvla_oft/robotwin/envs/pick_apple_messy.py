@@ -28,7 +28,8 @@ class pick_apple_messy(Base_task):
     def load_actors(self):
         self.actor_list=[]
         self.actor_data_list=[]
-        file_path = './envs/utils/rand_model_data.json'
+        file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "utils", "rand_model_data.json") 
+        #file_path = './envs/utils/rand_model_data.json'
         with open(file_path, 'r', encoding='utf-8') as file:
             data = json.load(file)
         

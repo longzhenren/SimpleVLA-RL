@@ -116,7 +116,11 @@ class Robotwin_Dataset(Dataset):
         if train_val == "valid":
             self.num_trials_per_task=64
         if train_val == "valid" and self.task_name == "robotwin_all":
-            self.num_trials_per_task=16
+            self.num_trials_per_task=31
+        if train_val == "valid" and self.task_name == "robotwin_5":
+            self.num_trials_per_task=52
+        if train_val == "valid" and self.task_name == "robotwin_3":
+            self.num_trials_per_task=86
         self.start_seed_id = 100000
         self._read_files_and_tokenize()
 
@@ -137,6 +141,39 @@ class Robotwin_Dataset(Dataset):
         elif self.task_name == "robotwin_all":
             # For robotwin_all, we iterate through all tasks and trials
             for task_name in self.all_task_names:
+                for i in range(0, int(self.num_trials_per_task)):
+                    data = {
+                        "task_suite_name": task_name,
+                        "task_id": torch.tensor(-1, dtype=torch.int64).unsqueeze(0),
+                        "trial_id": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0),
+                        "trial_seed": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0),
+                        "data_source": task_name
+                    }
+                    dataframes.append(data)
+            self.dataframe = dataframes
+            print(f'dataset len: {len(self.dataframe)}')
+        elif self.task_name == "robotwin_5":
+            # For robotwin_4, we iterate through all tasks and trials
+            task_names = ["block_hammer_beat", "block_handover", "blocks_stack_easy", "pick_apple_messy",  "shoe_place"]
+            task_names = ["robotwin_" + name for name in task_names]
+            for task_name in task_names:
+                for i in range(0, int(self.num_trials_per_task)):
+                    data = {
+                        "task_suite_name": task_name,
+                        "task_id": torch.tensor(-1, dtype=torch.int64).unsqueeze(0),
+                        "trial_id": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0),
+                        "trial_seed": torch.tensor(i+self.start_seed_id, dtype=torch.int64).unsqueeze(0),
+                        "data_source": task_name
+                    }
+                    dataframes.append(data)
+            self.dataframe = dataframes
+            print(f'dataset len: {len(self.dataframe)}')
+            
+        elif self.task_name == "robotwin_3":
+            # For robotwin_4, we iterate through all tasks and trials
+            task_names = ["block_handover", "blocks_stack_easy", "pick_apple_messy"]
+            task_names = ["robotwin_" + name for name in task_names]
+            for task_name in task_names:
                 for i in range(0, int(self.num_trials_per_task)):
                     data = {
                         "task_suite_name": task_name,

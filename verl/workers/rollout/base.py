@@ -15,7 +15,7 @@
 from abc import ABC, abstractmethod
 from typing import Iterable, Union
 
-from verl import DataProto
+#from verl import DataProto
 
 __all__ = ['BaseRollout']
 
@@ -32,6 +32,6 @@ class BaseRollout(ABC):
         super().__init__()
 
     @abstractmethod
-    def generate_sequences(self, prompts: DataProto) -> DataProto:
+    def generate_sequences(self, prompts):
         """Generate sequences"""
         pass

@@ -8,9 +8,9 @@ export CUDA_LAUNCH_BLOCKING=1
 export TORCH_USE_CUDA_DSA=1
 
 PROJECT_NAME='SimpleVLA-RL-robotwin'
-EXPERIMENT_NAME='robotwin_17tasks_image1_noproprio_25chunks_120k_batch64_trail50' 
+EXPERIMENT_NAME='robotwin_17tasks_image1_wproprio_25chunks_140k_batch64_trail100' 
 # For openvla-oft Libero-Long traj1 SFT or traj all SFT models can be find in https://huggingface.co/collections/Haozhan72/simplevla-rl-6833311430cd9df52aeb1f86
-SFT_MODEL_PATH="/mnt/petrelfs/lihaozhan/Ckpts/Openvla-oft-robotwin/17tasks_image1_noproprio_nofilm_aloha_25chunks_50k_chkpt"
+SFT_MODEL_PATH="/mnt/petrelfs/lihaozhan/Ckpts/Openvla-oft-robotwin/17tasks_image1_proprio_nofilm_aloha_25chunks_140k_chkpt"
 CKPT_PATH="/mnt/petrelfs/lihaozhan/Ckpts/oft-robotwin-rl"
 # DATASET_NAME can be libero_10 (libero_Long), libero_90, libero_spatial, libero_object, libero_goal
 DATASET_NAME="robotwin_all"
@@ -23,14 +23,14 @@ ALIGN_PATH="/mnt/petrelfs/lihaozhan/Rob/SimpleVLA-RL-robotwin/align.json"
 
 HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
     data.task_suite_name=$DATASET_NAME \
-    data.num_trials_per_task=50 \
+    data.num_trials_per_task=100 \
     data.n_samples=8 \
     data.filter_accuracy=True \
     data.accuracy_lower_bound=0.1 \
     data.accuracy_upper_bound=0.9 \
     data.oversample_factor=1 \
     data.train_batch_size=64 \
-    data.val_batch_size=272 \
+    data.val_batch_size=512 \
     data.max_prompt_length=256 \
     data.max_response_length=128 \
     actor_rollout_ref.model.path=$SFT_MODEL_PATH \
@@ -54,7 +54,7 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
     actor_rollout_ref.model.use_remove_padding=False \
     actor_rollout_ref.actor.entropy_coeff=0. \
     actor_rollout_ref.rollout.num_images_in_input=1 \
-    actor_rollout_ref.rollout.use_proprio=False \
+    actor_rollout_ref.rollout.use_proprio=True \
     actor_rollout_ref.rollout.val_micro_batch_size=8 \
     actor_rollout_ref.rollout.temperature=1.6 \
     actor_rollout_ref.rollout.experiment_name=$EXPERIMENT_NAME \

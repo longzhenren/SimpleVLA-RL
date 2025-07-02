@@ -24,6 +24,8 @@ from transformers.modeling_outputs import ModelOutput
 from .train_utils import (
     get_current_action_mask,
     get_next_actions_mask,
+    load_component_state_dict,
+    find_checkpoint_file,
 )
 from .constants import (
     ACTION_DIM,
@@ -62,6 +64,26 @@ def ls_apply_patch(ls_module: LayerScale):
     ls_module.forward = _ls_new_forward.__get__(ls_module, LayerScale)
     del ls_module.gamma
 
+
+class ProprioProjector(nn.Module):
+    """
+    Projects proprio state inputs into the LLM's embedding space.
+    """
+    def __init__(self, llm_dim: int, proprio_dim: int) -> None:
+        super().__init__()
+        self.llm_dim = llm_dim
+        self.proprio_dim = proprio_dim
+
+        self.fc1 = nn.Linear(self.proprio_dim, self.llm_dim, bias=True)
+        self.fc2 = nn.Linear(self.llm_dim, self.llm_dim, bias=True)
+        self.act_fn1 = nn.GELU()
+
+    def forward(self, proprio: torch.Tensor = None) -> torch.Tensor:
+        # proprio: (bsz, proprio_dim)
+        projected_features = self.fc1(proprio)
+        projected_features = self.act_fn1(projected_features)
+        projected_features = self.fc2(projected_features)
+        return projected_features
 
 # === Prismatic Vision Backbone (nn.Module) Definitions (w/ Fused Backbone Support) ===
 class PrismaticVisionBackbone(nn.Module):
@@ -348,6 +370,13 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
             llm_dim=config.text_config.hidden_size,
         )
 
+        self.proprio_projector = None
+        if config.use_proprio:
+            self.proprio_projector = ProprioProjector(
+                llm_dim=config.text_config.hidden_size,
+                proprio_dim=config.proprio_dim
+            )
+        
         # Instantiate LLM Backbone
         self.language_model = AutoModelForCausalLM.from_config(
             config.text_config, attn_implementation=config._attn_implementation
@@ -1081,7 +1110,7 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
         attention_mask=None,
         #labels=None,
         proprio=None,
-        proprio_projector=None,
+        #proprio_projector=None,
         action_head=None,
         noisy_action_projector=None,
         use_film: bool = False,
@@ -1212,11 +1241,11 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
         
         
         # Add proprioceptive features if provided
-        use_proprio = proprio_projector is not None and proprio is not None
+        use_proprio = self.proprio_projector is not None and proprio is not None
         if use_proprio:
             proprio = torch.Tensor(proprio).to(projected_patch_embeddings.device, dtype=projected_patch_embeddings.dtype)
             projected_patch_embeddings = self._process_proprio_features(
-                projected_patch_embeddings, proprio, proprio_projector
+                projected_patch_embeddings, proprio, self.proprio_projector
             )
 
         # Use diffusion if provided, otherwise use regression or discrete prediction
@@ -1336,6 +1365,20 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
         # Compute vocab size for de-tokenization -- revert added "multiple of"
         self.vocab_size = self.config.text_config.vocab_size - self.config.pad_to_multiple_of
+    
+    def load_proprio_projector_weights(self, checkpoint_path_or_repo_id: str):
+        """
+        Load pre-trained weights for the proprio projector.
+        
+        Args:
+            checkpoint_path_or_repo_id: Either a local path to checkpoint file or HF Hub repo ID
+        """
+        if self.proprio_projector is None:
+            raise ValueError("Model was not initialized with use_proprio=True")
+
+        checkpoint_path = find_checkpoint_file(checkpoint_path_or_repo_id, "proprio_projector")
+        state_dict = load_component_state_dict(checkpoint_path)
+        self.proprio_projector.load_state_dict(state_dict)
 
     def _prepare_input_for_action_prediction(self, input_ids, attention_mask):
         """Prepares input for action prediction by adding necessary tokens"""
@@ -1829,7 +1872,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         input_ids: Optional[torch.LongTensor] = None,
         unnorm_key: Optional[str] = None,
         proprio=None,
-        proprio_projector=None,
+        # proprio_projector=None,
         action_head=None,
         noisy_action_projector=None,
         use_film: bool = False,
@@ -1907,11 +1950,11 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         projected_patch_embeddings = self._process_vision_features(pixel_values, language_embeddings, use_film)
 
         # Add proprioceptive features if provided
-        use_proprio = proprio_projector is not None and proprio is not None
+        use_proprio = self.proprio_projector is not None and proprio is not None
         if use_proprio:
             proprio = torch.Tensor(proprio).to(projected_patch_embeddings.device, dtype=projected_patch_embeddings.dtype)
             projected_patch_embeddings = self._process_proprio_features(
-                projected_patch_embeddings, proprio, proprio_projector
+                projected_patch_embeddings, proprio, self.proprio_projector
             )
 
         # Use diffusion if provided, otherwise use regression or discrete prediction

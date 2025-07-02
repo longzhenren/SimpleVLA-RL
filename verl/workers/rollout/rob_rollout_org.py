@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Optimized Rollout with huggingface models using threading instead of multiprocessing.
+Rollout with huggingface models.
+TODO: refactor this class. Currently, it will hang when using FSDP HybridShard. We should actually create a single GPU model.
+Then, get full state_dict and bind the state_dict to the single GPU model. Then, use the single GPU model to perform generation.
 """
 import contextlib
 import os
@@ -32,6 +34,7 @@ from .base import BaseRollout
 
 from transformers import GenerationConfig, AutoProcessor
 
+# from verl.utils.libero_utils import get_libero_env, get_libero_dummy_action, get_image_resize_size, get_libero_image, get_libero_wrist_image, quat2axisangle, normalize_gripper_action, invert_gripper_action, save_rollout_video
 from verl.utils.libero_utils import save_rollout_video
 from verl.utils.vla_utils.openvla_oft.constants import (
     ACTION_DIM,
@@ -40,18 +43,18 @@ from verl.utils.vla_utils.openvla_oft.constants import (
 import numpy as np
 from PIL import Image
 import tensorflow as tf
+#from verl import DataProto
+#from libero.libero import benchmark
+#from codetiming import Timer
 from collections import deque
 import random
 import yaml
 
-import threading
-import queue
+import multiprocessing
 import gc
+from multiprocessing import Process, Queue
 from collections import defaultdict
 import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
-from codetiming import Timer
 
 __all__ = ['RobHFRollout']
 
@@ -128,6 +131,98 @@ def center_crop_image(image):
     image = image.convert("RGB")
     return image
 
+def env_worker_libero(task_name, task_id, trial_id, _, config, input_queue, output_queue, is_valid, global_steps, max_steps):
+    benchmark_dict = benchmark.get_benchmark_dict()
+    task_suite = benchmark_dict[task_name]()
+    task = task_suite.get_task(task_id)
+    initial_states = task_suite.get_task_init_states(task_id)
+    initial_state = initial_states[trial_id]
+    
+    
+    env = None
+    while True:
+        try:
+            env, task_description = get_libero_env(task, config.model_family, resolution=256)
+            break  
+        except:
+            print(f"*** env initialization failed ***")
+            if env is not None:
+                try:
+                    env.close()  
+                except Exception as e:
+                    print(f"error when close the env: {e}")
+            torch.cuda.empty_cache()
+            gc.collect()
+            print("gc collect finish")
+    
+    env.reset()
+    obs = env.set_init_state(initial_state)
+    
+    
+    t = 0
+    valid_images = []
+    while t < config.num_steps_wait:
+        obs, _, _, _ = env.step(get_libero_dummy_action(config.model_family))
+        t += 1
+        
+    if is_valid:
+        img = obs["agentview_image"][::-1, ::-1]
+        valid_images.append(img)
+    
+    output_queue.put({
+        'type': 'init',
+        'obs': obs,
+        "task_description":task_description,
+        'valid_images': valid_images.copy(),
+        'task_file_name': f"{task_name}_task_{task_id}_trial_{trial_id}",
+        'active': True,
+        'complete': False,
+        'finish_step': 0
+    })
+    
+    active = True
+    complete = False
+    finish_step = 0
+    
+    while True:
+        
+        action = input_queue.get()
+        if action is None:
+            env.close()
+            output_queue.put({'type': 'terminate'})
+            break
+        
+        
+        step_images = []
+        for i in range(len(action)):
+            a = action[i]
+            normalized_action = normalize_gripper_action(a, binarize=True)
+            inverted_action = invert_gripper_action(normalized_action)
+            obs, reward, done, info = env.step(inverted_action.tolist())
+            
+            if is_valid:
+                img = obs["agentview_image"][::-1, ::-1]
+                step_images.append(img)
+            
+            
+            finish_step += 1
+            #if done or finish_step >= config.max_steps[config.task_suite_name]:
+            if done or finish_step >= max_steps:
+                active = False
+                complete = done
+                break
+        
+        
+        output_data = {
+            'type': 'step',
+            'obs': obs,
+            'active': active,
+            'complete': complete,
+            'finish_step': finish_step,
+            'valid_images': step_images.copy() if is_valid else []
+        }
+        output_queue.put(output_data)
+        
 def get_robotwin_args(task_name, config):
     # TODO (cjh, fix): Assume config has `head_camera_type` attribute, chosen in [L515, D435], otherwise default to D435
     TASK_DESCRIPTIONS = {
@@ -191,6 +286,146 @@ def get_robotwin_task(task_name, config):
         raise SystemExit("No Task")
     return env_instance, args
 
+def env_worker_robotwin(task_name, _, trial_id, trial_seed, config, input_queue, output_queue, is_valid, __, ___):    
+    try:
+        #print("enter env_worker_robotwin")
+        # if multiprocessing.get_start_method(allow_none=True) != 'spawn':
+        #     print("multiprocessing not spawn")
+        # else:
+        #     print("multiprocessing is spawn")
+        success = False
+        current_seed = trial_seed
+        while not success:
+            try:
+                env, args = get_robotwin_task(task_name, config)
+                demo_success = False
+                current_seed = trial_seed
+                while not demo_success:
+                    try:
+                        #print(f"Setting up demo with seed {current_seed} for task {task_name}, trial_id {trial_id}")
+                        env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
+                        #print(f"Demo setup with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
+                        env.play_once()
+                        #print(f"Demo play once with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
+                        env.close()
+                        #print(f"Env closed with seed {current_seed} for task {task_name}, trial_id {trial_id} successful.")
+                        # demo_success = True
+                        # success = True
+                        #print("Test setup demo success!")
+                    except Exception as e:
+                        print(f"setup_demo failed with seed {current_seed}: {e}.\nRetrying...", flush=True)
+                        env.close()
+                        current_seed += 1
+                        continue
+                    if  env.plan_success and env.check_success() :
+                        demo_success = True
+                        success = True
+                    else:
+                        current_seed += 1
+                    
+            except Exception as e:
+                print(f"*** env initialization failed: {e} ***", flush=True)
+                if 'env' in locals() and env is not None:
+                    try:
+                        env.close()
+                    except Exception as e_close:
+                        print(f"error when closing the env: {e_close}", flush=True)
+                torch.cuda.empty_cache()
+                gc.collect()
+                print("gc collect finish", flush=True)
+        
+        while True:
+            try:
+                env.setup_demo(now_ep_num=trial_id, seed=current_seed, is_test=True, **args)
+                break
+            except Exception as e:
+                print(f"******IN env setup_demo ERROR {e} ******", flush=True)
+        
+        try:
+            env._update_render()
+        except Exception as e:
+            print(f"******IN _update_render ERROR {e} ******", flush=True)
+            
+        while True:
+            try:
+                obs = env.get_obs()
+                break
+            except Exception as e:
+                print(f"******IN INIT env.get_obs ERROR {e} ******", flush=True)
+        #print(f"env setup with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
+        
+        valid_images = []        
+        if is_valid:
+            img = obs['observation']['head_camera']['rgb']
+            valid_images.append(img)
+        
+        output_queue.put({
+            'type': 'init',
+            'obs': obs,
+            "task_description": args['task_description'],
+            'valid_images': valid_images.copy(),
+            'task_file_name': f"{task_name}_trial_{trial_id}_seed_{trial_seed}",
+            'active': True,
+            'complete': False,
+            'finish_step': 0
+        })
+        #print(f"env initialized with task {task_name}, trial_id {trial_id}, trial_seed {trial_seed}")
+        
+        active = True
+        complete = False
+        finish_step = 0
+        
+        env.actor_pose = True
+        #obs = env.get_obs()
+        while True:
+            action = input_queue.get()
+            #print(f"Received action: {action}")
+            #print(f"Received action shape: {action.shape}")
+            if action is None:
+                try:
+                    env.close()
+                except Exception as e:
+                    print(f"******IN env.close ERROR {e} ******", flush=True)
+                    
+                output_queue.put({'type': 'terminate'})
+                break
+            
+            try:
+                done = env._execute_actions_and_check_success(action, obs)
+            except Exception as e:
+                done = False
+                print(f"****** _execute_actions_and_check_success ERROR {e} ******", flush=True)
+            
+            try:
+                obs = env.get_obs()
+            except Exception as e:
+                print(f"****** env.get_obs ERROR {e} ******", flush=True)
+            finish_step += action.shape[0]
+            #print(f"Step {finish_step}, done: {done}")
+            
+            step_images = []
+            if is_valid:
+                img = obs['observation']['head_camera']['rgb']
+                step_images.append(img)
+            
+            if done or finish_step >= env.step_lim or env.actor_pose == False :
+                active = False
+                complete = done
+                    
+            output_data = {
+                'type': 'step',
+                'obs': obs,
+                'active': active,
+                'complete': complete,
+                'finish_step': finish_step,
+                'valid_images': step_images.copy() if is_valid else []
+            }
+            output_queue.put(output_data)
+    except Exception as e:
+        print(f"---***Total Top env_worker_robotwin Error: {e}*****---------", flush=True)
+        print("详细错误信息：", flush=True)
+        traceback.print_exc()  # 这会打印完整的错误堆栈
+
 def normalize_proprio(proprio, norm_stats):
     """
     Normalize proprioception data to match training distribution.
@@ -222,143 +457,35 @@ def normalize_proprio(proprio, norm_stats):
 
     return normalized_proprio
 
-class RobotwinEnvWrapper:
-    """Thread-safe wrapper for Robotwin environment"""
-    def __init__(self, task_name, trial_id, trial_seed, config):
-        self.task_name = task_name
-        self.trial_id = trial_id
-        self.trial_seed = trial_seed
-        self.config = config
-        self.env = None
-        self.args = None
-        self.active = True
-        self.complete = False
-        self.finish_step = 0
-        self.lock = threading.Lock()
-        
-    def initialize(self):
-        """Initialize the environment"""
-        with self.lock:
-            success = False
-            current_seed = self.trial_seed
-            
-            while not success:
-                try:
-                    self.env, self.args = get_robotwin_task(self.task_name, self.config)
-                    demo_success = False
-                    
-                    while not demo_success:
-                        try:
-                            self.env.setup_demo(now_ep_num=self.trial_id, seed=current_seed, is_test=True, **self.args)
-                            self.env.play_once()
-                            self.env.close()
-                            
-                            if self.env.plan_success and self.env.check_success():
-                                demo_success = True
-                                success = True
-                            else:
-                                current_seed += 1
-                                
-                        except Exception as e:
-                            print(f"setup_demo failed with seed {current_seed}: {e}.\nRetrying...", flush=True)
-                            self.env.close()
-                            current_seed += 1
-                            continue
-                            
-                except Exception as e:
-                    print(f"*** env initialization failed: {e} ***", flush=True)
-                    if self.env is not None:
-                        try:
-                            self.env.close()
-                        except Exception as e_close:
-                            print(f"error when closing the env: {e_close}", flush=True)
-                    torch.cuda.empty_cache()
-                    gc.collect()
-                    
-            # Setup environment for actual rollout
-            self.env.setup_demo(now_ep_num=self.trial_id, seed=current_seed, is_test=True, **self.args)
-            self.env._update_render()
-            self.env.actor_pose = True
-            
-    def get_obs(self):
-        """Get observation from environment"""
-        with self.lock:
-            return self.env.get_obs()
-            
-    def step(self, action):
-        """Execute action in environment"""
-        #print(f"***IN ENV step***: ", flush=True)
-        with self.lock:
-            try:
-                #with Timer(name="ENV get_obs", logger=None) as obs_timer:                
-                #print(f"***BEFORE _execute_actions_and_check_success***: ", flush=True)
-                current_obs = self.env.get_obs()  
-                #print(f" .env.get_obs took: {obs_timer.last:.3f} seconds", flush=True)
-                
-                #with Timer(name="ENV _execute_actions_and_check_success", logger=None) as act_timer:      
-                done = self.env._execute_actions_and_check_success(action, current_obs)
-                #print(f" .env._execute_actions_and_check_success took: {act_timer.last:.3f} seconds", flush=True)
-                #done = self.env._execute_actions_and_check_success(action, self.get_obs())
-                #print(f"***after _execute_actions_and_check_success***: ", flush=True)
-            except Exception as e:
-                done = False
-                #print(f"****** _execute_actions_and_check_success ERROR {e} ******", flush=True)
-                error_msg = f"****** _execute_actions_and_check_success ERROR: {type(e).__name__}: {str(e)} ******"
-                print(error_msg, flush=True)
-                traceback.print_exc()
-                
-            try:
-                #print(f"***BEFORE get_obs***: ", flush=True)
-                #with Timer(name="ENV get_obs 2 ", logger=None) as obs_timer_2:       
-                obs = self.env.get_obs()
-                #print(f" .env.get_obs 2 took: {obs_timer_2.last:.3f} seconds", flush=True)
-                #print(f"***AFTER get_obs***: ", flush=True)
-            except Exception as e:
-                print(f"****** env.get_obs ERROR {e} ******", flush=True)
-                obs = None
-                
-            self.finish_step += action.shape[0]
-            
-            if done or self.finish_step >= self.env.step_lim or self.env.actor_pose == False:
-                self.active = False
-                self.complete = done
-            
-            return obs, done
-            
-    def close(self):
-        """Close the environment"""
-        with self.lock:
-            if self.env is not None:
-                try:
-                    self.env.close()
-                except Exception as e:
-                    print(f"******IN env.close ERROR {e} ******", flush=True)
-
-
-
 class RobHFRollout(BaseRollout):
 
     def __init__(self, module: nn.Module, config):
         super().__init__()
         self.config = config
         self.module = module
-        self.max_steps = {
-            "libero_spatial": 512,
-            "libero_object": 512,
-            "libero_goal": 512,
-            "libero_10": 512,
-            "libero_90": 512,
-            "robotwin_block_hammer_beat": 300,
-            "robotwin_all": 800,
-            "robotwin_5": 600,
-            "robotwin_3": 600,
-        }
+        self.max_steps = {   "libero_spatial": 512,   # max step length 193
+                                    "libero_object": 512,    # max step length 254
+                                    "libero_goal": 512,      # max step length 270
+                                    "libero_10": 512,        # max step length 505
+                                    "libero_90": 512,         # max step length 373 org 400 now change to 512
+                                    "robotwin_block_hammer_beat":300,
+                                    "robotwin_all":800,
+                                }
         self.processor = AutoProcessor.from_pretrained(config.pretrained_checkpoint, trust_remote_code=True)
         self.vla_preprocess()
         
-        # Thread pool for parallel environment execution
-        self.env_thread_pool = ThreadPoolExecutor(max_workers=16)
-        
+        #oft add
+        # unnorm_key=config.unnorm_key
+        # if  unnorm_key not in self.module.norm_stats and f"{unnorm_key}_no_noops" in self.module.norm_stats:
+        #     unnorm_key = f"{unnorm_key}_no_noops"
+        # assert unnorm_key in self.module.norm_stats, f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!"
+        # self.config.unnorm_key = unnorm_key
+        #add end
+        # gpus = tf.config.experimental.list_physical_devices('GPU')
+        # if gpus:
+        #     for gpu in gpus:  
+        #         tf.config.experimental.set_memory_growth(gpu, True)
+    
     def vla_preprocess(self):
         if self.config.vla in ["openvla","openvla-oft"]:
             gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -368,11 +495,12 @@ class RobHFRollout(BaseRollout):
         
         if self.config.vla in ["openvla-oft"]:
             if "libero" in self.config.task_suite_name:
-                if self.config.unnorm_key not in self.module.norm_stats and f"{self.config.unnorm_key}_no_noops" in self.module.norm_stats:
+                if  self.config.unnorm_key not in self.module.norm_stats and f"{self.config.unnorm_key}_no_noops" in self.module.norm_stats:
                     self.config.unnorm_key = f"{self.config.unnorm_key}_no_noops"
             elif "robotwin" in self.config.task_suite_name:
                 self.config.unnorm_key = self.config.unnorm_key.removeprefix("robotwin_")
-            assert self.config.unnorm_key in self.module.norm_stats, f"Action un-norm key {self.config.unnorm_key} not found in VLA `norm_stats`!"
+            assert self.config.unnorm_key in self.module.norm_stats, f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!"
+
 
     def generate_sequences(self, prompts):
         batch_size = prompts.batch.batch_size[0]
@@ -388,9 +516,11 @@ class RobHFRollout(BaseRollout):
         output = DataProto.concat(output)
         return output
     
+    
     def process_input(self, inputs: list, task_descriptions: list):
         batchdata = {"input_ids": [], "attention_mask": [], "pixel_values": [], "proprio": []}  
 
+        #print(f"len(inputs) {len(inputs)} len(task_descriptions) {len(task_descriptions)}")
         for i in range(len(inputs)):
             input = inputs[i]
             task_description = task_descriptions[i]
@@ -411,11 +541,14 @@ class RobHFRollout(BaseRollout):
                     wrist_batch_feature = self.processor(prompt, wrist_image)
                     pixel_values_list.append(wrist_batch_feature["pixel_values"])
 
+            #print(f"len(pixel_values_list) {len(pixel_values_list)}")
+            #print(f"pixel_values_list[0].shape {pixel_values_list[0].shape}")
             batch_feature["pixel_values"] = torch.cat(pixel_values_list, dim=1)
 
             input_ids = batch_feature["input_ids"]
             attention_mask = batch_feature["attention_mask"]
             pixel_values = batch_feature["pixel_values"]
+            #print(f"batch_feature.shape {pixel_values.shape}")
             
             if not torch.all(input_ids[:, -1] == 29871):
                 input_ids = torch.cat(
@@ -437,6 +570,7 @@ class RobHFRollout(BaseRollout):
                 proprio_norm_stats = self.module.norm_stats[self.config.unnorm_key]["proprio"]
                 input["state"] = normalize_proprio(proprio, proprio_norm_stats)
                 proprio = input["state"]
+                #batchdata["proprio"].append(proprio)    
                 batchdata["proprio"].append(torch.from_numpy(proprio))
         
         device = torch.device('cuda') 
@@ -448,14 +582,15 @@ class RobHFRollout(BaseRollout):
             batchdata["attention_mask"] = pad_sequence(batchdata["attention_mask"], batch_first=True, padding_value=0).squeeze(-1).to(device)
             
             padding_mask = batchdata["input_ids"].ne(self.processor.tokenizer.pad_token_id)
-            assert torch.all(padding_mask==batchdata["attention_mask"].ne(0))
+            assert  torch.all(padding_mask==batchdata["attention_mask"].ne(0))
             padding_mask = ~padding_mask
             padding_mask = padding_mask.int() 
             sorted_indices = torch.argsort(padding_mask, dim=1, descending=True, stable=True)
             batchdata["input_ids"] = torch.gather(batchdata["input_ids"], 1, sorted_indices)
             batchdata["attention_mask"] = torch.gather(batchdata["attention_mask"], 1, sorted_indices)
             
-            batchdata["pixel_values"] = torch.cat(batchdata["pixel_values"], dim=0).to(device)
+            
+            batchdata["pixel_values"] = torch.cat(batchdata["pixel_values"] , dim=0).to(device)
             if self.config.use_proprio:
                 batchdata["proprio"] = torch.stack(batchdata["proprio"], dim=0).to(device)
                 
@@ -464,6 +599,9 @@ class RobHFRollout(BaseRollout):
             for key in ["input_ids", "attention_mask", "pixel_values"]:
                 batchdata[key] = torch.cat(batchdata[key], dim=0).to(device)
 
+        # for k,v in batchdata.items():
+        #     print(f"In process batchdata name is {k} and value is {v.shape} ")
+        
         return batchdata
    
     def _generate_minibatch(self, prompts):
@@ -474,166 +612,124 @@ class RobHFRollout(BaseRollout):
         trial_id = prompts.batch['trial_id'].repeat_interleave(n_samples, dim=0)
         trial_seed = prompts.batch['trial_seed'].repeat_interleave(n_samples, dim=0)
         task_suite_name = np.repeat(prompts.non_tensor_batch['task_suite_name'], n_samples)
+        #max_steps = self.max_steps[self.config.task_suite_name] if "libero" in self.config.task_suite_name else -1
         max_steps = self.max_steps[self.config.task_suite_name] 
         batch_size = task_id.size(0)
         is_valid = meta_info.get('n_samples') is None
         global_steps = meta_info.get('global_steps', 0) if is_valid else 0
         
-        # Create environment wrappers
-        env_wrappers = []
+        import multiprocessing
+        mp_context = multiprocessing.get_context('spawn')
+        
+        processes = []
+        input_queues = []
+        output_queues = []
+        
+        #test
+        #env_worker_robotwin("block_hammer_beat", None, 141, 141, self.config, Queue(), Queue(), False, None, None)
+        #test
+        
         for idx in range(batch_size):
             task_name = task_suite_name[idx].removeprefix("robotwin_")
             t_id = task_id[idx][0].item()
             tr_id = trial_id[idx][0].item()
             tr_seed = trial_seed[idx][0].item()
-            
-            if "robotwin" in self.config.task_suite_name:
-                wrapper = RobotwinEnvWrapper(task_name, tr_id, tr_seed, self.config)
-                env_wrappers.append(wrapper)
-            else:
-                # For libero, we still need to use the original process-based approach
-                # or implement a similar thread-safe wrapper
-                raise NotImplementedError("Libero environments not yet supported in threaded version")
+            input_q = mp_context.Queue()
+            output_q = mp_context.Queue()
+            env_worker = env_worker_libero if "libero" in self.config.task_suite_name else env_worker_robotwin
+            p = mp_context.Process(
+                target=env_worker,
+                args=(task_name, t_id, tr_id, tr_seed, self.config, input_q, output_q, is_valid, global_steps, max_steps)
+            )
+            p.start()
+            processes.append(p)
+            input_queues.append(input_q)
+            output_queues.append(output_q)
         
-        # Initialize environments in parallel
-        init_futures = []
-        for wrapper in env_wrappers:
-            future = self.env_thread_pool.submit(wrapper.initialize)
-            init_futures.append(future)
-        #print(f"begin environments to initialize ", flush=True)
-        # Wait for all environments to initialize
-        for future in as_completed(init_futures,timeout=360):
-            try:
-                future.result()
-            except Exception as e:
-                print(f"Environment initialization failed: {e}", flush=True)
-                traceback.print_exc()
-                raise
-        #print(f"end environments to initialize ", flush=True)
-        # Collect initial observations
         inputs = []
         task_descriptions = []
         task_records = []
         valid_video = defaultdict(list)
+        for idx in range(batch_size):
+            init_data = output_queues[idx].get(timeout=360)
+            assert init_data['type'] == 'init'
+            task_descriptions.append(init_data["task_description"])
+            inputs.append(self._obs_to_input(init_data['obs']))
+            task_records.append({
+                "active": init_data['active'],
+                "complete": init_data['complete'],
+                "finish_step": init_data['finish_step'],
+                "task_file_name": init_data['task_file_name']
+            })
+            if is_valid:
+                valid_video[init_data['task_file_name']].extend(init_data['valid_images'])
         
-        for idx, wrapper in enumerate(env_wrappers):
-            try:
-                obs = wrapper.get_obs()
-                task_description = wrapper.args['task_description']
-                task_descriptions.append(task_description)
-                inputs.append(self._obs_to_input(obs))
-                
-                task_file_name = f"{wrapper.task_name}_trial_{wrapper.trial_id}_seed_{wrapper.trial_seed}"
-                task_records.append({
-                    "active": wrapper.active,
-                    "complete": wrapper.complete,
-                    "finish_step": wrapper.finish_step,
-                    "task_file_name": task_file_name
-                })
-                
-                if is_valid:
-                    img = obs['observation']['head_camera']['rgb']
-                    valid_video[task_file_name].append(img)
-                    
-            except Exception as e:
-                print(f"Failed to get initial observation: {e}", flush=True)
-                traceback.print_exc()
-                raise
-        
-        # Main rollout loop
         step = 0
         vla_history = []
-        
         while step < max_steps:
             active_indices = [i for i, r in enumerate(task_records) if r['active']]
-            # if not active_indices:
-            #     break
-                
+            
             current_inputs = inputs
             current_task_descriptions = task_descriptions
            
-            # Get VLA actions
-            #with Timer(name="process_input", logger=None) as process_timer:
             vla_input = self.process_input(current_inputs, current_task_descriptions)
             vla_input.update(meta_info)
-            #print(f"[Step {step}] process_input took: {process_timer.last:.3f} seconds", flush=True)
-            
-            #with Timer(name="generate_one_step", logger=None) as generate_timer:
             vla_output = self._generate_one_step(vla_input)
-            #print(f"[Step {step}] _generate_one_step took: {generate_timer.last:.3f} seconds", flush=True)
-                
             actions = vla_output["action"]
             
-            #total_vla_time = process_timer.last + generate_timer.last 
-            #print(f"[Step {step}] Total VLA processing time: {total_vla_time:.3f} seconds", flush=True)
-            
             step_data = {
-                "responses": vla_output["responses"],
-                "input_ids": vla_output["input_ids"],
-                "attention_mask": vla_output["attention_mask"],
-                "pixel_values": vla_output["pixel_values"],
-                "action": actions,
-                "step": step
-            }
-            if vla_output.get("proprio") is not None:
+                    "responses": vla_output["responses"],
+                    "input_ids": vla_output["input_ids"],
+                    "attention_mask": vla_output["attention_mask"],
+                    "pixel_values": vla_output["pixel_values"],
+                    "action": actions,
+                    "step": step
+                }
+            if  vla_output.get("proprio") is not None:
                 step_data["proprio"] = vla_output["proprio"]
                 
             vla_history.append(step_data)
-            #print(f"*********step is: {step}***********", flush=True)
-            # Execute actions in parallel
-            #with Timer(name="env_step_submission", logger=None) as submit_timer:
-            step_futures = []
-            for idx in active_indices:
-                future = self.env_thread_pool.submit(
-                    env_wrappers[idx].step,
-                    actions[idx]
-                )
-                step_futures.append((idx, future))
-            #print(f"[Step {step}] Submitting env steps took: {submit_timer.last:.3f} seconds", flush=True)
             
-            # Collect results
-            #with Timer(name="collect_results", logger=None) as collect_timer:
+            for  idx in active_indices:
+                input_queues[idx].put(actions[idx])
+            
             new_inputs = inputs.copy()
-            for idx, future in step_futures:
+            for idx in active_indices:
                 try:
-                    obs, done = future.result(timeout=120)
-                    if obs is not None:
-                        new_inputs[idx] = self._obs_to_input(obs)
-                        
-                    task_records[idx]['active'] = env_wrappers[idx].active
-                    task_records[idx]['complete'] = env_wrappers[idx].complete
-                    task_records[idx]['finish_step'] = env_wrappers[idx].finish_step
-                    
-                    if is_valid and obs is not None:
-                        img = obs['observation']['head_camera']['rgb']
-                        valid_video[task_records[idx]['task_file_name']].append(img)
-                        
+                    result = output_queues[idx].get(timeout=90)
+                    assert result['type'] == 'step'
+                    new_inputs[idx] = self._obs_to_input(result['obs'])
+                    task_records[idx]['active'] = result['active']
+                    task_records[idx]['complete'] = result['complete']
+                    task_records[idx]['finish_step'] = result['finish_step']
+                    if is_valid:
+                        valid_video[task_records[idx]['task_file_name']].extend(result['valid_images'])
                 except Exception as e:
-                    print(f"Step execution failed: {e}", flush=True)
+                    print(f"---***output_queues[idx].get(timeout=90) Error: {e}*****---------", flush=True)
                     task_records[idx]['active'] = False
                     task_records[idx]['complete'] = False
                     task_records[idx]['finish_step'] = step + self.config.action_chunks_len
-                    #raise
-            #print(f"[Step {step}] Collecting results took: {collect_timer.last:.3f} seconds", flush=True)
+                    
+                # assert result['type'] == 'step'
+                # new_inputs[idx] = self._obs_to_input(result['obs'])
+                # task_records[idx]['active'] = result['active']
+                # task_records[idx]['complete'] = result['complete']
+                # task_records[idx]['finish_step'] = result['finish_step']
+                # if is_valid:
+                #     valid_video[task_records[idx]['task_file_name']].extend(result['valid_images'])
             
             inputs = new_inputs
             step += self.config.action_chunks_len
-        
-        # Clean up environments
-        cleanup_futures = []
-        for wrapper in env_wrappers:
-            future = self.env_thread_pool.submit(wrapper.close)
-            cleanup_futures.append(future)
             
-        for future in as_completed(cleanup_futures):
-            try:
-                future.result(timeout=20)
-            except Exception as e:
-                print(f"Environment cleanup failed: {e}", flush=True)
+        for q in input_queues:
+            q.put(None)
+        for p in processes:
+            p.join(timeout=20)
+            if p.is_alive():
+                p.terminate()
         
         torch.cuda.empty_cache()
         
-        # Save validation videos
         if is_valid:
             for task_file, images in valid_video.items():
                 complete = any(r['complete'] for r in task_records if r['task_file_name'] == task_file)
@@ -647,13 +743,12 @@ class RobHFRollout(BaseRollout):
         
         self.module.train()
         
-        # Prepare output batch
         batch = {
-            'responses': [],
-            'input_ids': [],
-            'attention_mask': [],
-            'pixel_values': []
-        }
+                'responses': [],
+                'input_ids': [],  # here input_ids become the whole sentences
+                'attention_mask': [],
+                'pixel_values': []
+            }
         key_names = ["responses", "input_ids", "attention_mask", "pixel_values"]
         if self.config.use_proprio:
             batch["proprio"] = []
@@ -663,8 +758,8 @@ class RobHFRollout(BaseRollout):
             for h in vla_history:
                 batch[k].append(h[k])
         
-        for k, v in batch.items():
-            batch[k] = torch.stack(v, dim=1) 
+        for k,v in batch.items():
+            batch[k] = torch.stack(v,dim=1) 
   
         batch["complete"] = []
         batch["finish_step"] = []
@@ -676,6 +771,10 @@ class RobHFRollout(BaseRollout):
         batch["complete"] = torch.tensor(batch["complete"], dtype=torch.bool, device=batch['responses'].device)
         batch["finish_step"] = torch.tensor(batch["finish_step"], dtype=torch.int64, device=batch['responses'].device)
         
+        # print(f"batch_size {batch_size}")
+        # for k,v in batch.items():
+        #     print(f"name is {k} and value is {v.shape} ")
+        
         output_batch = TensorDict(
             batch,
             batch_size=batch_size)
@@ -684,8 +783,8 @@ class RobHFRollout(BaseRollout):
     @torch.no_grad()
     def _generate_one_step(self, prompts: dict):
         if self.config.vla == "openvla-oft":
-            idx = prompts['input_ids']
-            attention_mask = prompts['attention_mask']
+            idx = prompts['input_ids']  # (bs, prompt_length)
+            attention_mask = prompts['attention_mask']  # left-padded attention_mask
             pixel_values = prompts["pixel_values"]
             if self.config.use_proprio:
                 proprio = prompts["proprio"]
@@ -696,7 +795,11 @@ class RobHFRollout(BaseRollout):
 
             # make sampling args can be overriden by inputs
             do_sample = prompts.get('do_sample', self.config.do_sample)
+        
+
             temperature = prompts.get('temperature', self.config.temperature)
+
+            #generation_config = GenerationConfig(temperature=temperature, top_p=top_p, top_k=top_k)
 
             if isinstance(self.module, FSDP):
                 # recurse need to set to False according to https://github.com/pytorch/pytorch/issues/100069
@@ -709,50 +812,43 @@ class RobHFRollout(BaseRollout):
                         pixel_values=pixel_values,
                         proprio=proprio,
                         attention_mask=attention_mask,
-                        padding_idx=self.processor.tokenizer.pad_token_id,
+                        padding_idx = self.processor.tokenizer.pad_token_id,
                         do_sample=do_sample,
                         unnorm_key=self.config.unnorm_key,
-                        temperature=temperature,
-                    )
+                        temperature=temperature, )
+            
             
             assert self.processor.tokenizer.pad_token_id is not None
 
             assert idx.ndim == 2
-            idx = verl_F.pad_sequence_to_length(
-                idx,
-                max_seq_len=self.config.max_prompt_length,
-                pad_token_id=self.processor.tokenizer.pad_token_id,
-                left_pad=True
-            )
+            idx = verl_F.pad_sequence_to_length(idx,max_seq_len=self.config.max_prompt_length,pad_token_id=self.processor.tokenizer.pad_token_id,left_pad=True)
             
             assert attention_mask.ndim == 2
-            attention_mask = verl_F.pad_sequence_to_length(
-                attention_mask,
-                max_seq_len=self.config.max_prompt_length,
-                pad_token_id=0,
-                left_pad=True
-            )
+            attention_mask = verl_F.pad_sequence_to_length(attention_mask,max_seq_len=self.config.max_prompt_length,pad_token_id=0,left_pad=True)
+            
             
             assert idx.device.type == 'cuda'
             assert response.device.type == 'cuda'
+            #assert seq.device.type == 'cuda'
             assert attention_mask.device.type == 'cuda'
             assert pixel_values.device.type == 'cuda'
-            
-            batch = {
-                'responses': response,
-                'input_ids': idx,
-                'attention_mask': attention_mask,
-                "pixel_values": pixel_values,
-                "action": actions,
-            }
+            batch ={
+                    'responses': response,
+                    'input_ids': idx,
+                    'attention_mask': attention_mask,
+                    "pixel_values":pixel_values,
+                    "action":actions,
+                }
             if self.config.use_proprio:
                 batch["proprio"] = proprio
+            # for k,v in batch.items():
+            #     print(f"In generate one step name is {k} and value is {v.shape} ")
 
             return batch
         
         elif self.config.vla == "openvla": 
-            idx = prompts['input_ids']
-            attention_mask = prompts['attention_mask']
+            idx = prompts['input_ids']  # (bs, prompt_length)
+            attention_mask = prompts['attention_mask']  # left-padded attention_mask
             pixel_values = prompts["pixel_values"]
             
             # used to construct attention_mask
@@ -761,38 +857,43 @@ class RobHFRollout(BaseRollout):
 
             batch_size = idx.size(0)
             prompt_length = idx.size(1)
+            #self.module.eval()
             param_ctx = contextlib.nullcontext()
 
             do_sample = prompts.get('do_sample', self.config.do_sample)
-            response_length = self.module.get_action_dim(self.config.unnorm_key)
+            response_length =  self.module.get_action_dim(self.config.unnorm_key)
             top_p = prompts.get('top_p', self.config.get('top_p', 1.0))
             top_k = prompts.get('top_k', self.config.get('top_k', 0))
             if top_k is None:
                 top_k = 0
-            top_k = max(0, top_k)
+            top_k = max(0, top_k)  # to be compatible with vllm
 
             temperature = prompts.get('temperature', self.config.temperature)
             generation_config = GenerationConfig(temperature=temperature, top_p=top_p, top_k=top_k)
 
             if isinstance(self.module, FSDP):
+                # recurse need to set to False according to https://github.com/pytorch/pytorch/issues/100069
                 param_ctx = FSDP.summon_full_params(self.module, writeback=False, recurse=False)
             
             with param_ctx:
                 with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                    
                     output = self.module.generate(
                         input_ids=idx,
                         pixel_values=pixel_values,
                         attention_mask=attention_mask,
                         do_sample=do_sample,
                         max_new_tokens=response_length,
+                        # max_length=max_length,
                         eos_token_id=eos_token_id,
                         pad_token_id=pad_token_id,
                         generation_config=generation_config,
-                        output_scores=False,
+                        # renormalize_logits=True,
+                        output_scores=False,  # this is potentially very large
                         return_dict_in_generate=True,
-                        use_cache=True
-                    )
+                        use_cache=True)
                     
+           
             seq = output.sequences
             sequence_length = prompt_length + response_length
             delta_length = sequence_length - seq.shape[1]
@@ -800,25 +901,22 @@ class RobHFRollout(BaseRollout):
             assert delta_length == 0
             assert seq.shape[1] == sequence_length
 
-            prompt = seq[:, :prompt_length]
-            response = seq[:, prompt_length:]
+            prompt = seq[:, :prompt_length]  # (bs, prompt_length)
+            response = seq[:, prompt_length:]  # (bs, response_length)
 
             response_length = response.size(1)
-            response_attention_mask = get_eos_mask(
-                response_id=response,
-                eos_token=eos_token_id,
-                dtype=attention_mask.dtype
-            )
+            #delta_position_id = torch.arange(1, response_length + 1, device=position_ids.device)
+            #delta_position_id = delta_position_id.unsqueeze(0).repeat(batch_size, 1)
+            #response_position_ids = position_ids[:, -1:] + delta_position_id
+            #position_ids = torch.cat([position_ids, response_position_ids], dim=-1)
+
+            response_attention_mask = get_eos_mask(response_id=response, eos_token=eos_token_id, dtype=attention_mask.dtype)
             attention_mask = torch.cat((attention_mask, response_attention_mask), dim=-1)
 
             # Extract predicted action tokens and translate into (normalized) continuous actions
             predicted_action_token_ids = response.detach().cpu().numpy()
             discretized_actions = self.module.vocab_size - predicted_action_token_ids
-            discretized_actions = np.clip(
-                discretized_actions - 1,
-                a_min=0,
-                a_max=self.module.bin_centers.shape[0] - 1
-            )
+            discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=self.module.bin_centers.shape[0] - 1)
             normalized_actions = self.module.bin_centers[discretized_actions]
 
             # Unnormalize actions
@@ -835,51 +933,36 @@ class RobHFRollout(BaseRollout):
             
             assert self.processor.tokenizer.pad_token_id is not None
             assert prompt.ndim == 2
-            prompt = verl_F.pad_sequence_to_length(
-                prompt,
-                max_seq_len=self.config.max_prompt_length,
-                pad_token_id=self.processor.tokenizer.pad_token_id,
-                left_pad=True
-            )
+            prompt = verl_F.pad_sequence_to_length(prompt,max_seq_len=self.config.max_prompt_length,pad_token_id=self.processor.tokenizer.pad_token_id,left_pad=True)
             assert seq.ndim == 2
-            seq = verl_F.pad_sequence_to_length(
-                seq,
-                max_seq_len=self.config.max_prompt_length,
-                pad_token_id=self.processor.tokenizer.pad_token_id,
-                left_pad=True
-            )
+            seq = verl_F.pad_sequence_to_length(seq,max_seq_len=self.config.max_prompt_length,pad_token_id=self.processor.tokenizer.pad_token_id,left_pad=True)
             assert attention_mask.ndim == 2
-            attention_mask = verl_F.pad_sequence_to_length(
-                attention_mask,
-                max_seq_len=self.config.max_prompt_length,
-                pad_token_id=0,
-                left_pad=True
-            )
+            attention_mask = verl_F.pad_sequence_to_length(attention_mask,max_seq_len=self.config.max_prompt_length,pad_token_id=0,left_pad=True)
             
-            batch = {
-                'prompts': prompt,
-                'responses': response,
-                'input_ids': seq,
-                'attention_mask': attention_mask,
-                "pixel_values": pixel_values,
-                "action": actions,
-            }
+            batch ={
+                    'prompts': prompt,
+                    'responses': response,
+                    'input_ids': seq,
+                    'attention_mask': attention_mask,
+                    "pixel_values":pixel_values,
+                    "action":actions,
+                    #'position_ids': position_ids
+                }
             
             return batch
                 
+            
+
+        
     def _obs_to_input(self, obs):
         if "libero" in self.config.task_suite_name:
-            from verl.utils.libero_utils import quat2axisangle
-            state = np.concatenate([
-                obs["robot0_eef_pos"],
-                quat2axisangle(obs["robot0_eef_quat"]),
-                obs["robot0_gripper_qpos"]
-            ])
+            state = np.concatenate([obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"]])
         else:
             state = obs['joint_action']
             state[6] /= 0.045
             state[13] /= 0.045
-            
+        #libero_state = np.concatenate([obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"]])
+        #state = libero_state if "libero" in self.config.task_suite_name else robotwin_state
         if self.config.num_images_in_input == 3:
             return {
                 "full_image": obs['observation']['head_camera']['rgb'],
@@ -888,7 +971,6 @@ class RobHFRollout(BaseRollout):
                 "state": state
             }
         elif self.config.num_images_in_input == 2:
-            from verl.utils.libero_utils import get_libero_image, get_libero_wrist_image
             return {
                 "full_image": get_libero_image(obs, 224),
                 "wrist_image": get_libero_wrist_image(obs, 224),
@@ -899,8 +981,3 @@ class RobHFRollout(BaseRollout):
                 "full_image": obs['observation']['head_camera']['rgb'],
                 "state": state
             }
-    
-    def __del__(self):
-        """Cleanup thread pool on deletion"""
-        if hasattr(self, 'env_thread_pool'):
-            self.env_thread_pool.shutdown(wait=False)
