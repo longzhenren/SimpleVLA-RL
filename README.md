@@ -29,7 +29,7 @@
 With **only one trajectory** per task for SFT, SimpleVLA-RL leverages online RL with simple outcome-level 0/1 rule-based reward signals to achieve performance comparable to full-trajectory SFT.
 
 <div align="center">
-<img src="figs/teaser.png" alt="Performance of SimpleVLA-RL." width="100%" />
+<img src="figs/teaser.png" alt="Performance of SimpleVLA-RL." width="90%" />
 
 <!-- <sub>*Our openvla-oft model design differs from the official one. Our setup: third-person image, language instruction; parallel decoding (PD) & action chunking (AC). Official setup: third-person image, wrist camera image, robot proprioceptive state, language instruction; PD, AC, and continuous actions with L1 regression (Cont-L1).*</sub> -->
 </div>
@@ -44,7 +44,7 @@ With **only one trajectory** per task for SFT, SimpleVLA-RL leverages online RL 
 We introduce SimpleVLA-RL, a simple yet effective approach for online Reinforcement Learning (RL) for Vision-Language-Action (VLA) models, which utilizes only outcome-level 0/1 rule-based reward signals directly obtained from simulation environments.
 
 <div align="center">
-<img src="figs/simplevla-rl.png" alt="Overview of SimpleVLA-RL." width="100%" />
+<img src="figs/simplevla-rl.png" alt="Overview of SimpleVLA-RL." width="90%" />
 </div>
 
 
