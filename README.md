@@ -2,9 +2,9 @@
 
 <img src="figs/logo.png" width="260"/>
 
-## 🚀 Online RL with Simple Reward Enables Training VLA Models with Only One Trajectory
+## 🚀 Scaling VLA Training via Reinforcement Learning
 
-[![Github](https://img.shields.io/badge/SimpleVLA--RL-000000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/PRIME-RL/SimpleVLA-RL) [![Hugging Face Collection](https://img.shields.io/badge/Models-fcd022?style=for-the-badge&logo=huggingface&logoColor=000)](https://huggingface.co/collections/Haozhan72/simplevla-rl-6833311430cd9df52aeb1f86) [![Twitter](https://img.shields.io/badge/Twitter-%23000000.svg?style=for-the-badge&logo=x&logoColor=white)](https://x.com/stingning/status/1927770654385860804)
+[![Paper](https://img.shields.io/badge/Paper-A42C25?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/pdf/2509.09674) [![Github](https://img.shields.io/badge/SimpleVLA--RL-000000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/PRIME-RL/SimpleVLA-RL) [![Hugging Face Collection](https://img.shields.io/badge/Models-fcd022?style=for-the-badge&logo=huggingface&logoColor=000)](https://huggingface.co/collections/Haozhan72/simplevla-rl-6833311430cd9df52aeb1f86) [![Twitter](https://img.shields.io/badge/Twitter-%23000000.svg?style=for-the-badge&logo=x&logoColor=white)](https://x.com/stingning/status/1927770654385860804)
 
 </div>
 
@@ -29,13 +29,14 @@
 With **only one trajectory** per task for SFT, SimpleVLA-RL leverages online RL with simple outcome-level 0/1 rule-based reward signals to achieve performance comparable to full-trajectory SFT.
 
 <div align="center">
-<img src="figs/teaser.png" alt="Performance of SimpleVLA-RL." width="75%" />
+<img src="figs/teaser.png" alt="Performance of SimpleVLA-RL." width="100%" />
 
-<sub>*Our openvla-oft model design differs from the official one. Our setup: third-person image, language instruction; parallel decoding (PD) & action chunking (AC). Official setup: third-person image, wrist camera image, robot proprioceptive state, language instruction; PD, AC, and continuous actions with L1 regression (Cont-L1).*</sub>
+<!-- <sub>*Our openvla-oft model design differs from the official one. Our setup: third-person image, language instruction; parallel decoding (PD) & action chunking (AC). Official setup: third-person image, wrist camera image, robot proprioceptive state, language instruction; PD, AC, and continuous actions with L1 regression (Cont-L1).*</sub> -->
 </div>
 
 # 🎉News
 
+- **[2025-09-12]** Excited to release the **SimpleVLA-RL** paper! Check it out: [Paper](https://arxiv.org/pdf/2509.09674).
 - **[2025-05-27]** We release the code of **SimpleVLA-RL**.
 
 # 📖Overview
@@ -43,7 +44,7 @@ With **only one trajectory** per task for SFT, SimpleVLA-RL leverages online RL 
 We introduce SimpleVLA-RL, a simple yet effective approach for online Reinforcement Learning (RL) for Vision-Language-Action (VLA) models, which utilizes only outcome-level 0/1 rule-based reward signals directly obtained from simulation environments.
 
 <div align="center">
-<img src="figs/simplevla-rl.png" alt="Overview of SimpleVLA-RL." width="90%" />
+<img src="figs/simplevla-rl.png" alt="Overview of SimpleVLA-RL." width="100%" />
 </div>
 
 
@@ -143,11 +144,10 @@ For further details and updates, please refer to the official documentation and 
 
 If you find SimpleVLA-RL helpful, please cite us.
 ```bibtex
-@misc{li2025simplevlarl,
-  title={SimpleVLA-RL: Online RL with Simple Reward Enables Training VLA Models with Only One Trajectory},
-  author={{SimpleVLA-RL Team}},
-  year={2025},
-  howpublished={\url{https://github.com/PRIME-RL/SimpleVLA-RL}},
-  note={GitHub repository}
+@article{li2025simplevla,
+  title={SimpleVLA-RL: Scaling VLA Training via Reinforcement Learning},
+  author={Li, Haozhan and Zuo, Yuxin and Yu, Jiale and Zhang, Yuhao and Yang, Zhaohui and Zhang, Kaiyan and Zhu, Xuekai and Zhang, Yuchen and Chen, Tianxing and Cui, Ganqu and others},
+  journal={arXiv preprint arXiv:2509.09674},
+  year={2025}
 }
 ```
