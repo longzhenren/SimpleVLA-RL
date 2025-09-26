@@ -24,7 +24,7 @@
 </div> -->
 
 
-> Motivated by the breakthrough of DeepSeek-R1, we demonstrate that even simple 0/1 rewards can enable effective online RL for VLA models.
+> We demonstrate that even simple 0/1 rewards can enable effective, scalable, generalizable online RL for VLA models.
 
 
 <div align="center">
