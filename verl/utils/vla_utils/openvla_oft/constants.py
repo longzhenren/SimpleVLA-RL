@@ -37,6 +37,27 @@ ALOHA_CONSTANTS = {
     "ACTION_PROPRIO_NORMALIZATION_TYPE": NormalizationType.BOUNDS,
 }
 
+ALOHA_CONSTANTS_12chunk = {
+    "NUM_ACTIONS_CHUNK": 12,
+    "ACTION_DIM": 14,
+    "PROPRIO_DIM": 14,
+    "ACTION_PROPRIO_NORMALIZATION_TYPE": NormalizationType.BOUNDS,
+}
+
+ALOHA_CONSTANTS_8chunk = {
+    "NUM_ACTIONS_CHUNK": 8,
+    "ACTION_DIM": 14,
+    "PROPRIO_DIM": 14,
+    "ACTION_PROPRIO_NORMALIZATION_TYPE": NormalizationType.BOUNDS,
+}
+
+ALOHA_CONSTANTS_6chunk = {
+    "NUM_ACTIONS_CHUNK": 6,
+    "ACTION_DIM": 14,
+    "PROPRIO_DIM": 14,
+    "ACTION_PROPRIO_NORMALIZATION_TYPE": NormalizationType.BOUNDS,
+}
+
 BRIDGE_CONSTANTS = {
     "NUM_ACTIONS_CHUNK": 5,
     "ACTION_DIM": 7,
@@ -49,7 +70,13 @@ BRIDGE_CONSTANTS = {
 def detect_robot_platform():
     cmd_args = " ".join(sys.argv).lower()
 
-    if "libero" in cmd_args:
+    if "aloha_12chunk" in cmd_args:
+        return "ALOHA_12"
+    elif "aloha_8chunk" in cmd_args:
+        return "ALOHA_8"
+    elif "aloha_6chunk" in cmd_args:
+        return "ALOHA_6"
+    elif "libero" in cmd_args:
         return "ALOHA"
     elif "aloha" in cmd_args:
         return "ALOHA"
@@ -63,12 +90,19 @@ def detect_robot_platform():
 
 # Determine which robot platform to use
 ROBOT_PLATFORM = detect_robot_platform()
+#ROBOT_PLATFORM = "ALOHA_12"
 
 # Set the appropriate constants based on the detected platform
 if ROBOT_PLATFORM == "LIBERO":
     constants = LIBERO_CONSTANTS
 elif ROBOT_PLATFORM == "ALOHA":
     constants = ALOHA_CONSTANTS
+elif ROBOT_PLATFORM == "ALOHA_12":
+    constants = ALOHA_CONSTANTS_12chunk
+elif ROBOT_PLATFORM == "ALOHA_8":
+    constants = ALOHA_CONSTANTS_8chunk
+elif ROBOT_PLATFORM == "ALOHA_6":
+    constants = ALOHA_CONSTANTS_6chunk   
 elif ROBOT_PLATFORM == "BRIDGE":
     constants = BRIDGE_CONSTANTS
 
@@ -79,9 +113,9 @@ PROPRIO_DIM = constants["PROPRIO_DIM"]
 ACTION_PROPRIO_NORMALIZATION_TYPE = constants["ACTION_PROPRIO_NORMALIZATION_TYPE"]
 
 # Print which robot platform constants are being used (for debugging)
-print(f"Using {ROBOT_PLATFORM} constants:")
-print(f"  NUM_ACTIONS_CHUNK = {NUM_ACTIONS_CHUNK}")
-print(f"  ACTION_DIM = {ACTION_DIM}")
-print(f"  PROPRIO_DIM = {PROPRIO_DIM}")
-print(f"  ACTION_PROPRIO_NORMALIZATION_TYPE = {ACTION_PROPRIO_NORMALIZATION_TYPE}")
-print("If needed, manually set the correct constants in `/verl/utils/vla_utils/openvla_oft/constants.py`!")
+print(f"Using {ROBOT_PLATFORM} constants:",flush=True)
+print(f"  NUM_ACTIONS_CHUNK = {NUM_ACTIONS_CHUNK}",flush=True)
+# print(f"  ACTION_DIM = {ACTION_DIM}")
+# print(f"  PROPRIO_DIM = {PROPRIO_DIM}")
+# print(f"  ACTION_PROPRIO_NORMALIZATION_TYPE = {ACTION_PROPRIO_NORMALIZATION_TYPE}")
+# print("If needed, manually set the correct constants in `/verl/utils/vla_utils/openvla_oft/constants.py`!")

@@ -27,6 +27,7 @@ actor_rollout_ref:
     vla: openvla-oft
     action_token_len: 7
     action_chunks_len: 8
+    resume: False
     path: ~/models/deepseek-llm-7b-chat
     external_lib: null
     override_config: { }
@@ -85,6 +86,9 @@ actor_rollout_ref:
     action_chunks_len: ${actor_rollout_ref.model.action_chunks_len}
     experiment_name: None
     unnorm_key: libero_10
+    twin2_task_config: demo_randomized
+    twin2_ckpt_setting: ${actor_rollout_ref.rollout.twin2_task_config}
+    twin2_instruction_type: unseen
     micro_batch_size: 1
     val_micro_batch_size: 8
     model_family: openvla

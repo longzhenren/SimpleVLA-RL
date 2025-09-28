@@ -200,7 +200,7 @@ class RobActorRolloutRefWorker(Worker):
                                                         config=actor_model_config,              
                                                         trust_remote_code=True,
                                                     )
-                if self.config.rollout.use_proprio:
+                if self.config.rollout.use_proprio and self.config.model.resume == False:
                     # Load proprio projector weights if available
                     actor_module.load_proprio_projector_weights(local_path)
                     print("******Loaded pre-trained proprio projector weights*********")

@@ -43,6 +43,7 @@ import tensorflow as tf
 from collections import deque
 import random
 import yaml
+from pathlib import Path
 
 import threading
 import queue
@@ -54,6 +55,8 @@ import time
 from codetiming import Timer
 
 __all__ = ['RobHFRollout']
+
+_ENV_INIT_LOCK = threading.Lock()
 
 OPENVLA_V01_SYSTEM_PROMPT = (
     "A chat between a curious user and an artificial intelligence assistant. "
@@ -129,7 +132,8 @@ def center_crop_image(image):
     return image
 
 def get_robotwin_args(task_name, config):
-    # TODO (cjh, fix): Assume config has `head_camera_type` attribute, chosen in [L515, D435], otherwise default to D435
+    """Get robotwin 1.0 args"""
+   
     TASK_DESCRIPTIONS = {
         "block_hammer_beat": "There is a hammer and a block in the middle of the table. If the block is closer to the left robotic arm, it uses the left arm to pick up the hammer and strike the block; otherwise, it does the opposite.",
         "block_handover": "A long block is placed on the left side of the table. The left arm grasps the upper side of the block and then hands it over to the right arm, which places the block on the blue mat on the right side of the table.",
@@ -152,14 +156,14 @@ def get_robotwin_args(task_name, config):
 
     config_path = os.path.join(
         os.path.dirname(__file__),
-        '..', '..', 'utils', 'vla_utils', 'openvla_oft', 'robotwin', 'configs', '_base_task_config.yml'
+        '..', '..', 'utils', 'envs', 'robotwin1', 'configs', '_base_task_config.yml'
     )
     with open(config_path, 'r', encoding='utf-8') as f:
         args = yaml.load(f.read(), Loader=yaml.FullLoader)
     
     camera_config_path = os.path.join(
         os.path.dirname(__file__),
-        '..', '..', 'utils', 'vla_utils', 'openvla_oft', 'robotwin', 'configs', '_camera_config.yml'
+        '..', '..', 'utils', 'envs', 'robotwin1', 'configs', '_camera_config.yml'
     )
     with open(camera_config_path, 'r', encoding='utf-8') as f:
         camera_args = yaml.load(f.read(), Loader=yaml.FullLoader)
@@ -180,8 +184,9 @@ def get_robotwin_args(task_name, config):
     return args
 
 def get_robotwin_task(task_name, config):
+    """Get robotwin 1.0 task"""
     sys.path.append('./verl')
-    envs_module = importlib.import_module(f'utils.vla_utils.openvla_oft.robotwin.envs.{task_name}')
+    envs_module = importlib.import_module(f'utils.envs.robotwin1.envs.{task_name}')
     args = {}
     try:
         env_class = getattr(envs_module, task_name)
@@ -189,6 +194,187 @@ def get_robotwin_task(task_name, config):
         args = get_robotwin_args(task_name, config)
     except:
         raise SystemExit("No Task")
+    return env_instance, args
+
+# def get_robotwin2_task(task_name, config):
+#     """Get robotwin 2.0 task using the eval_policy.py approach"""
+#     # Add the robotwin2 path to sys.path
+#     robotwin2_path = os.path.join(os.path.dirname(__file__), '..', '..', 'utils', 'vla_utils', 'openvla_oft', 'robotwin2')
+#     if robotwin2_path not in sys.path:
+#         sys.path.append(robotwin2_path)
+        
+#     robotwin2_utils_path = os.path.join(os.path.dirname(__file__), '..', '..', 'utils', 'vla_utils', 'openvla_oft', 'robotwin2',"description","utils")
+#     if robotwin2_utils_path not in sys.path:
+#         sys.path.append(robotwin2_utils_path)
+    
+#     # Import necessary modules from robotwin2
+#     from envs import CONFIGS_PATH
+    
+#     # Get environment instance
+#     envs_module = importlib.import_module(f"envs.{task_name}")
+#     try:
+#         env_class = getattr(envs_module, task_name)
+#         env_instance = env_class()
+#     except:
+#         raise SystemExit(f"No Task: {task_name}")
+    
+#     # Load configuration
+#     task_config = config.get('twin2_task_config', 'demo_randomized')  # Default to demo_randomized
+#     config_file = os.path.join(robotwin2_path, f"task_config/{task_config}.yml")
+    
+#     with open(config_file, "r", encoding="utf-8") as f:
+#         args = yaml.load(f.read(), Loader=yaml.FullLoader)
+    
+#     args['task_name'] = task_name
+#     args['task_config'] = task_config
+#     args['ckpt_setting'] = config.get('twin2_ckpt_setting', 'demo_randomized')
+    
+#     # Load embodiment configuration
+#     embodiment_type = args.get("embodiment")
+#     embodiment_config_path = os.path.join(CONFIGS_PATH, "_embodiment_config.yml")
+    
+#     with open(embodiment_config_path, "r", encoding="utf-8") as f:
+#         _embodiment_types = yaml.load(f.read(), Loader=yaml.FullLoader)
+    
+#     def get_embodiment_file(embodiment_type):
+#         robot_file = _embodiment_types[embodiment_type]["file_path"]
+#         if robot_file is None:
+#             raise ValueError("No embodiment files")
+#         return robot_file
+    
+#     def get_embodiment_config(robot_file):
+#         robot_config_file = os.path.join(robot_file, "config.yml")
+#         with open(robot_config_file, "r", encoding="utf-8") as f:
+#             embodiment_args = yaml.load(f.read(), Loader=yaml.FullLoader)
+#         return embodiment_args
+    
+#     # Setup embodiment configuration
+#     if len(embodiment_type) == 1:
+#         args["left_robot_file"] = get_embodiment_file(embodiment_type[0])
+#         args["right_robot_file"] = get_embodiment_file(embodiment_type[0])
+#         args["dual_arm_embodied"] = True
+#     elif len(embodiment_type) == 3:
+#         args["left_robot_file"] = get_embodiment_file(embodiment_type[0])
+#         args["right_robot_file"] = get_embodiment_file(embodiment_type[1])
+#         args["embodiment_dis"] = embodiment_type[2]
+#         args["dual_arm_embodied"] = False
+#     else:
+#         raise ValueError("embodiment items should be 1 or 3")
+    
+    
+    
+#     args["left_embodiment_config"] = get_embodiment_config(args["left_robot_file"])
+#     args["right_embodiment_config"] = get_embodiment_config(args["right_robot_file"])
+    
+    
+#     # Load camera configuration
+#     with open(CONFIGS_PATH + "_camera_config.yml", "r", encoding="utf-8") as f:
+#         _camera_config = yaml.load(f.read(), Loader=yaml.FullLoader)
+    
+#     head_camera_type = args["camera"]["head_camera_type"]
+#     args["head_camera_h"] = _camera_config[head_camera_type]["h"]
+#     args["head_camera_w"] = _camera_config[head_camera_type]["w"]
+    
+#     # Set eval mode
+#     args["eval_mode"] = True
+#     args["eval_video_log"] = False  # Disable video logging for rollout
+#     args["render_freq"] = 0  # Disable rendering
+    
+#     # # Get task description from config or use a default
+#     # TASK_DESCRIPTIONS_V2 = {
+#     #     "click_bell": "Click the bell with the robotic arm",
+#     #     # Add more task descriptions as needed
+#     # }
+#     # args['task_description'] = TASK_DESCRIPTIONS_V2.get(task_name, f"Complete the {task_name} task")
+#     args['instruction_type'] = config.get('twin2_instruction_type', 'unseen')
+    
+    
+#     return env_instance, args
+
+def get_robotwin2_task(task_name, config):
+    """Get robotwin 2.0 task using the eval_policy.py approach"""
+    # Add the robotwin2 path to sys.path
+    robotwin2_path = os.path.join(os.path.dirname(__file__), '..', '..', 'utils', 'envs', 'robotwin2')
+    if robotwin2_path not in sys.path:
+        sys.path.append(robotwin2_path)
+        
+    robotwin2_utils_path = os.path.join(os.path.dirname(__file__), '..', '..', 'utils', 'envs', 'robotwin2',"description","utils")
+    if robotwin2_utils_path not in sys.path:
+        sys.path.append(robotwin2_utils_path)
+    
+    # Import necessary modules from robotwin2
+    from envs import CONFIGS_PATH
+    
+    # Get environment instance
+    envs_module = importlib.import_module(f"envs.{task_name}")
+    try:
+        env_class = getattr(envs_module, task_name)
+        env_instance = env_class()
+    except:
+        raise SystemExit(f"No Task: {task_name}")
+    
+    # Load configuration
+    task_config = config.get('twin2_task_config', 'demo_randomized')  # Default to demo_randomized
+    config_file = os.path.join(robotwin2_path, f"task_config/{task_config}.yml")
+    
+    with open(config_file, "r", encoding="utf-8") as f:
+        args = yaml.load(f.read(), Loader=yaml.FullLoader)
+    
+    args['task_name'] = task_name
+    args['task_config'] = task_config
+    args['ckpt_setting'] = config.get('twin2_ckpt_setting', 'demo_randomized')
+    
+    # Load embodiment configuration
+    embodiment_type = args.get("embodiment")
+    
+    embodiment_config_path = os.path.join(CONFIGS_PATH, "_embodiment_config.yml")
+    
+    with open(embodiment_config_path, "r", encoding="utf-8") as f:
+        _embodiment_types = yaml.load(f.read(), Loader=yaml.FullLoader)
+    
+    def get_embodiment_file(embodiment_type):
+        robot_file = _embodiment_types[embodiment_type]["file_path"]
+        if robot_file is None:
+            raise ValueError("No embodiment files")
+        return robot_file
+    
+    def get_embodiment_config(robot_file):
+        robot_config_file = os.path.join(robot_file, "config.yml")
+        with open(robot_config_file, "r", encoding="utf-8") as f:
+            embodiment_args = yaml.load(f.read(), Loader=yaml.FullLoader)
+        return embodiment_args
+    
+    # Setup embodiment configuration
+    if len(embodiment_type) == 1:
+        args["left_robot_file"] = get_embodiment_file(embodiment_type[0])
+        args["right_robot_file"] = get_embodiment_file(embodiment_type[0])
+        args["dual_arm_embodied"] = True
+    elif len(embodiment_type) == 3:
+        args["left_robot_file"] = get_embodiment_file(embodiment_type[0])
+        args["right_robot_file"] = get_embodiment_file(embodiment_type[1])
+        args["embodiment_dis"] = embodiment_type[2]
+        args["dual_arm_embodied"] = False
+    else:
+        raise ValueError("embodiment items should be 1 or 3")
+    
+    args["left_embodiment_config"] = get_embodiment_config(args["left_robot_file"])
+    args["right_embodiment_config"] = get_embodiment_config(args["right_robot_file"])
+    
+    # Load camera configuration
+    with open(CONFIGS_PATH + "_camera_config.yml", "r", encoding="utf-8") as f:
+        _camera_config = yaml.load(f.read(), Loader=yaml.FullLoader)
+    
+    head_camera_type = args["camera"]["head_camera_type"]
+    args["head_camera_h"] = _camera_config[head_camera_type]["h"]
+    args["head_camera_w"] = _camera_config[head_camera_type]["w"]
+    
+    # Set eval mode
+    args["eval_mode"] = True
+    args["eval_video_log"] = False  # Disable video logging for rollout
+    args["render_freq"] = 0  # Disable rendering
+    
+    args['instruction_type'] = config.get('twin2_instruction_type', 'unseen')
+    
     return env_instance, args
 
 def normalize_proprio(proprio, norm_stats):
@@ -222,106 +408,116 @@ def normalize_proprio(proprio, norm_stats):
 
     return normalized_proprio
 
+def encode_obs(observation):
+    """Post-Process Observation for robotwin 2.0 (from deploy_policy.py)"""
+    return observation
+
 class RobotwinEnvWrapper:
-    """Thread-safe wrapper for Robotwin environment"""
-    def __init__(self, task_name, trial_id, trial_seed, config):
+    """Thread-safe wrapper for Robotwin environment (supports both 1.0 and 2.0)"""
+    def __init__(self, task_name, trial_id, trial_seed, config, version="1.0"):
         self.task_name = task_name
         self.trial_id = trial_id
         self.trial_seed = trial_seed
         self.config = config
+        self.version = version
         self.env = None
         self.args = None
         self.active = True
         self.complete = False
         self.finish_step = 0
         self.lock = threading.Lock()
+        self.instruction = None
         
     def initialize(self):
         """Initialize the environment"""
-        with self.lock:
-            success = False
-            current_seed = self.trial_seed
-            
-            while not success:
+        #robotwin2.0 skips the play_once phase by pre-collecting seeds
+        with _ENV_INIT_LOCK:
+            with self.lock:
                 try:
-                    self.env, self.args = get_robotwin_task(self.task_name, self.config)
-                    demo_success = False
-                    
-                    while not demo_success:
-                        try:
-                            self.env.setup_demo(now_ep_num=self.trial_id, seed=current_seed, is_test=True, **self.args)
-                            self.env.play_once()
-                            self.env.close()
-                            
-                            if self.env.plan_success and self.env.check_success():
-                                demo_success = True
-                                success = True
-                            else:
-                                current_seed += 1
-                                
-                        except Exception as e:
-                            print(f"setup_demo failed with seed {current_seed}: {e}.\nRetrying...", flush=True)
-                            self.env.close()
-                            current_seed += 1
-                            continue
-                            
+                    if self.version == "1.0":  
+                        print("RobotWin 2.0 fully encompasses RobotWin 1.0, therefore we prioritize support for RobotWin 2.0")
+                        raise ValueError  
+                    else:  # 2.0
+                        self.env, self.args = get_robotwin2_task(self.task_name, self.config)
+                        self.env.setup_demo(now_ep_num=self.trial_id, seed=self.trial_seed, is_test=True, **self.args)
+                        episode_info_list = [self.env.get_info()]
                 except Exception as e:
-                    print(f"*** env initialization failed: {e} ***", flush=True)
-                    if self.env is not None:
-                        try:
-                            self.env.close()
-                        except Exception as e_close:
-                            print(f"error when closing the env: {e_close}", flush=True)
+                    print(f"****** IN thread: setup_demo ERROR {e} ******", flush=True)
                     torch.cuda.empty_cache()
                     gc.collect()
+                    self.env, self.args = get_robotwin2_task(self.task_name, self.config) # try second time
+                    self.env.setup_demo(now_ep_num=self.trial_id, seed=self.trial_seed, is_test=True, **self.args) 
+                    episode_info_list = [self.env.get_info()] 
+                
+                if self.version == "1.0":
+                    self.env._update_render()
+                    self.env.actor_pose = True
+                else:  # 2.0
+                    # Set instruction for 2.0
+                    from generate_episode_instructions import generate_episode_descriptions
+                    results = generate_episode_descriptions(self.task_name, episode_info_list, 1, seed=self.trial_id)
+                    self.instruction = np.random.choice(results[0][self.args["instruction_type"]])
+                    self.env.set_instruction(instruction=self.instruction)
                     
-            # Setup environment for actual rollout
-            self.env.setup_demo(now_ep_num=self.trial_id, seed=current_seed, is_test=True, **self.args)
-            self.env._update_render()
-            self.env.actor_pose = True
-            
     def get_obs(self):
         """Get observation from environment"""
         with self.lock:
-            return self.env.get_obs()
+            try:
+                geted_obs = self.env.get_obs() 
+                return geted_obs 
+            except Exception as e:
+                print(f"****** IN thread: get_obs ERROR {e} ******", flush=True) 
+                torch.cuda.empty_cache()
+                gc.collect()
+                geted_obs = self.env.get_obs() 
+                return geted_obs
+    
+    def get_instruction(self):
+        """Get instruction for the task"""
+        with self.lock:
+            if self.version == "1.0":
+                return self.args.get('task_description', '')
+            else:  # 2.0
+                return self.env.get_instruction() 
             
     def step(self, action):
         """Execute action in environment"""
-        #print(f"***IN ENV step***: ", flush=True)
         with self.lock:
             try:
-                #with Timer(name="ENV get_obs", logger=None) as obs_timer:                
-                #print(f"***BEFORE _execute_actions_and_check_success***: ", flush=True)
-                current_obs = self.env.get_obs()  
-                #print(f" .env.get_obs took: {obs_timer.last:.3f} seconds", flush=True)
-                
-                #with Timer(name="ENV _execute_actions_and_check_success", logger=None) as act_timer:      
-                done = self.env._execute_actions_and_check_success(action, current_obs)
-                #print(f" .env._execute_actions_and_check_success took: {act_timer.last:.3f} seconds", flush=True)
-                #done = self.env._execute_actions_and_check_success(action, self.get_obs())
-                #print(f"***after _execute_actions_and_check_success***: ", flush=True)
+                if self.version == "1.0":
+                    current_obs = self.env.get_obs()  
+                    done = self.env._execute_actions_and_check_success(action, current_obs)
+                else:  # 2.0
+                    # For 2.0, we speed up the action execution.
+                    # for single_action in action:
+                    #     self.env.take_action(single_action)
+                    self.env.take_action(action)
+                    done = self.env.eval_success 
+                    
             except Exception as e:
                 done = False
-                #print(f"****** _execute_actions_and_check_success ERROR {e} ******", flush=True)
-                error_msg = f"****** _execute_actions_and_check_success ERROR: {type(e).__name__}: {str(e)} ******"
+                error_msg = f"****** action execution ERROR: {type(e).__name__}: {str(e)} ******"
                 print(error_msg, flush=True)
                 traceback.print_exc()
                 
             try:
-                #print(f"***BEFORE get_obs***: ", flush=True)
-                #with Timer(name="ENV get_obs 2 ", logger=None) as obs_timer_2:       
                 obs = self.env.get_obs()
-                #print(f" .env.get_obs 2 took: {obs_timer_2.last:.3f} seconds", flush=True)
-                #print(f"***AFTER get_obs***: ", flush=True)
+                if self.version == "2.0":
+                    obs = encode_obs(obs)  # Post-process observation for 2.0
             except Exception as e:
                 print(f"****** env.get_obs ERROR {e} ******", flush=True)
                 obs = None
                 
             self.finish_step += action.shape[0]
             
-            if done or self.finish_step >= self.env.step_lim or self.env.actor_pose == False:
-                self.active = False
-                self.complete = done
+            if self.version == "1.0":
+                if done or self.finish_step >= self.env.step_lim or self.env.actor_pose == False:
+                    self.active = False
+                    self.complete = done
+            else:  # 2.0
+                if done or self.finish_step >= self.env.step_lim:
+                    self.active = False
+                    self.complete = done
             
             return obs, done
             
@@ -330,11 +526,13 @@ class RobotwinEnvWrapper:
         with self.lock:
             if self.env is not None:
                 try:
-                    self.env.close()
+                    if self.version == "1.0":
+                        self.env.close()
+                    else:
+                        #self.env.close_env(clear_cache=((self.trial_id + 1) % self.args["clear_cache_freq"] == 0))
+                        self.env.close_env(clear_cache=True)
                 except Exception as e:
                     print(f"******IN env.close ERROR {e} ******", flush=True)
-
-
 
 class RobHFRollout(BaseRollout):
 
@@ -348,16 +546,43 @@ class RobHFRollout(BaseRollout):
             "libero_goal": 512,
             "libero_10": 512,
             "libero_90": 512,
-            "robotwin_block_hammer_beat": 300,
-            "robotwin_all": 800,
-            "robotwin_5": 600,
-            "robotwin_3": 600,
+            "robotwin2_click_bell": 200,
+            "robotwin2_move_can_pot": 200 , 
+            "robotwin2_place_phone_stand": 200, 
+            "robotwin2_place_a2b_left": 200,
+            "robotwin2_place_a2b_right": 200,
+            "robotwin2_handover_mic": 200,
+            "robotwin2_pick_dual_bottles": 100,
+            "robotwin2_lift_pot": 200,
+            "robotwin2_put_bottles_dustbin": 800,
+            "robotwin2_stack_blocks_two": 400,
+            "robotwin2_stack_bowls_two": 400, 
+            "robotwin2_handover_block": 400,
+            "robotwin2_place_empty_cup": 200,
+            "robotwin2_shake_bottle": 75,
+            "robotwin2_move_stapler_pad": 200,
+            "robotwin2_place_container_plate": 150,
+            "robotwin2_blocks_ranking_rgb": 600,
+            "robotwin2_beat_block_hammer": 200,
+            "robotwin2_place_mouse_pad": 200,
+            "robotwin2_place_shoe": 250,
+            "robotwin2_move_pillbottle_pad": 200,
         }
         self.processor = AutoProcessor.from_pretrained(config.pretrained_checkpoint, trust_remote_code=True)
         self.vla_preprocess()
-        
         # Thread pool for parallel environment execution
         self.env_thread_pool = ThreadPoolExecutor(max_workers=16)
+        # Detect robotwin version
+        self.robotwin_version = self._detect_robotwin_version()
+        
+    def _detect_robotwin_version(self):
+        """Detect which version of robotwin to use based on config"""
+        if hasattr(self.config, 'robotwin_version'):
+            return self.config.robotwin_version
+        elif 'robotwin2' in self.config.task_suite_name:
+            return "2.0"
+        else:
+            return "1.0"
         
     def vla_preprocess(self):
         if self.config.vla in ["openvla","openvla-oft"]:
@@ -371,7 +596,7 @@ class RobHFRollout(BaseRollout):
                 if self.config.unnorm_key not in self.module.norm_stats and f"{self.config.unnorm_key}_no_noops" in self.module.norm_stats:
                     self.config.unnorm_key = f"{self.config.unnorm_key}_no_noops"
             elif "robotwin" in self.config.task_suite_name:
-                self.config.unnorm_key = self.config.unnorm_key.removeprefix("robotwin_")
+                self.config.unnorm_key = self.config.unnorm_key.removeprefix("robotwin_").removeprefix("robotwin2_")
             assert self.config.unnorm_key in self.module.norm_stats, f"Action un-norm key {self.config.unnorm_key} not found in VLA `norm_stats`!"
 
     def generate_sequences(self, prompts):
@@ -381,26 +606,24 @@ class RobHFRollout(BaseRollout):
             micro_batch_size = self.config.val_micro_batch_size if self.config.val_micro_batch_size is not None else 1
         else:
             micro_batch_size = self.config.get('micro_batch_size', batch_size)
-        
+            
         num_chunks = max(batch_size // micro_batch_size, 1)
         batch_prompts = prompts.chunk(chunks=num_chunks)
         output = [self._generate_minibatch(p) for p in batch_prompts]
         output = DataProto.concat(output)
         return output
-    
+       
     def process_input(self, inputs: list, task_descriptions: list):
         batchdata = {"input_ids": [], "attention_mask": [], "pixel_values": [], "proprio": []}  
-
         for i in range(len(inputs)):
             input = inputs[i]
             task_description = task_descriptions[i]
-           
+            # process image and text
             image = Image.fromarray(input["full_image"]).convert("RGB")
             if self.config.center_crop:
                 image = center_crop_image(image)
             prompt = f"In: What action should the robot take to {task_description.lower()}?\nOut:"
             batch_feature = self.processor(prompt, image)
-
             pixel_values_list = [batch_feature["pixel_values"]]
 
             for key in input:
@@ -412,7 +635,6 @@ class RobHFRollout(BaseRollout):
                     pixel_values_list.append(wrist_batch_feature["pixel_values"])
 
             batch_feature["pixel_values"] = torch.cat(pixel_values_list, dim=1)
-
             input_ids = batch_feature["input_ids"]
             attention_mask = batch_feature["attention_mask"]
             pixel_values = batch_feature["pixel_values"]
@@ -440,7 +662,7 @@ class RobHFRollout(BaseRollout):
                 batchdata["proprio"].append(torch.from_numpy(proprio))
         
         device = torch.device('cuda') 
-        
+        # padding input_ids
         if self.config.vla in ["openvla-oft"]:
             batchdata["input_ids"] = [x.transpose(0, 1) for x in batchdata["input_ids"]]
             batchdata["attention_mask"] = [x.transpose(0, 1) for x in batchdata["attention_mask"]]
@@ -474,25 +696,24 @@ class RobHFRollout(BaseRollout):
         trial_id = prompts.batch['trial_id'].repeat_interleave(n_samples, dim=0)
         trial_seed = prompts.batch['trial_seed'].repeat_interleave(n_samples, dim=0)
         task_suite_name = np.repeat(prompts.non_tensor_batch['task_suite_name'], n_samples)
-        max_steps = self.max_steps[self.config.task_suite_name] 
+        max_steps = self.max_steps.get(self.config.task_suite_name, 800)  # Default to 800 if not specified
         batch_size = task_id.size(0)
         is_valid = meta_info.get('n_samples') is None
         global_steps = meta_info.get('global_steps', 0) if is_valid else 0
-        
+         
         # Create environment wrappers
         env_wrappers = []
         for idx in range(batch_size):
-            task_name = task_suite_name[idx].removeprefix("robotwin_")
+            task_name = task_suite_name[idx].removeprefix("robotwin_").removeprefix("robotwin2_")
             t_id = task_id[idx][0].item()
             tr_id = trial_id[idx][0].item()
             tr_seed = trial_seed[idx][0].item()
             
             if "robotwin" in self.config.task_suite_name:
-                wrapper = RobotwinEnvWrapper(task_name, tr_id, tr_seed, self.config)
+                wrapper = RobotwinEnvWrapper(task_name, tr_id, tr_seed, self.config, version=self.robotwin_version)
                 env_wrappers.append(wrapper)
             else:
-                # For libero, we still need to use the original process-based approach
-                # or implement a similar thread-safe wrapper
+                # For libero, we still use the original process-based approach
                 raise NotImplementedError("Libero environments not yet supported in threaded version")
         
         # Initialize environments in parallel
@@ -500,16 +721,16 @@ class RobHFRollout(BaseRollout):
         for wrapper in env_wrappers:
             future = self.env_thread_pool.submit(wrapper.initialize)
             init_futures.append(future)
-        #print(f"begin environments to initialize ", flush=True)
+        
         # Wait for all environments to initialize
-        for future in as_completed(init_futures,timeout=360):
+        for future in as_completed(init_futures, timeout=360):
             try:
                 future.result()
             except Exception as e:
                 print(f"Environment initialization failed: {e}", flush=True)
                 traceback.print_exc()
                 raise
-        #print(f"end environments to initialize ", flush=True)
+        
         # Collect initial observations
         inputs = []
         task_descriptions = []
@@ -519,9 +740,12 @@ class RobHFRollout(BaseRollout):
         for idx, wrapper in enumerate(env_wrappers):
             try:
                 obs = wrapper.get_obs()
-                task_description = wrapper.args['task_description']
+                if wrapper.version == "2.0":
+                    obs = encode_obs(obs)  # Post-process observation for 2.0
+                    
+                task_description = wrapper.get_instruction()
                 task_descriptions.append(task_description)
-                inputs.append(self._obs_to_input(obs))
+                inputs.append(self._obs_to_input(obs, wrapper.version))
                 
                 task_file_name = f"{wrapper.task_name}_trial_{wrapper.trial_id}_seed_{wrapper.trial_seed}"
                 task_records.append({
@@ -546,26 +770,17 @@ class RobHFRollout(BaseRollout):
         
         while step < max_steps:
             active_indices = [i for i, r in enumerate(task_records) if r['active']]
-            # if not active_indices:
-            #     break
-                
+            
             current_inputs = inputs
             current_task_descriptions = task_descriptions
            
             # Get VLA actions
-            #with Timer(name="process_input", logger=None) as process_timer:
             vla_input = self.process_input(current_inputs, current_task_descriptions)
             vla_input.update(meta_info)
-            #print(f"[Step {step}] process_input took: {process_timer.last:.3f} seconds", flush=True)
             
-            #with Timer(name="generate_one_step", logger=None) as generate_timer:
             vla_output = self._generate_one_step(vla_input)
-            #print(f"[Step {step}] _generate_one_step took: {generate_timer.last:.3f} seconds", flush=True)
                 
             actions = vla_output["action"]
-            
-            #total_vla_time = process_timer.last + generate_timer.last 
-            #print(f"[Step {step}] Total VLA processing time: {total_vla_time:.3f} seconds", flush=True)
             
             step_data = {
                 "responses": vla_output["responses"],
@@ -579,9 +794,8 @@ class RobHFRollout(BaseRollout):
                 step_data["proprio"] = vla_output["proprio"]
                 
             vla_history.append(step_data)
-            #print(f"*********step is: {step}***********", flush=True)
+            
             # Execute actions in parallel
-            #with Timer(name="env_step_submission", logger=None) as submit_timer:
             step_futures = []
             for idx in active_indices:
                 future = self.env_thread_pool.submit(
@@ -589,16 +803,16 @@ class RobHFRollout(BaseRollout):
                     actions[idx]
                 )
                 step_futures.append((idx, future))
-            #print(f"[Step {step}] Submitting env steps took: {submit_timer.last:.3f} seconds", flush=True)
             
             # Collect results
-            #with Timer(name="collect_results", logger=None) as collect_timer:
             new_inputs = inputs.copy()
             for idx, future in step_futures:
                 try:
                     obs, done = future.result(timeout=120)
                     if obs is not None:
-                        new_inputs[idx] = self._obs_to_input(obs)
+                        if env_wrappers[idx].version == "2.0":
+                            obs = encode_obs(obs)  # Post-process observation for 2.0
+                        new_inputs[idx] = self._obs_to_input(obs, env_wrappers[idx].version)
                         
                     task_records[idx]['active'] = env_wrappers[idx].active
                     task_records[idx]['complete'] = env_wrappers[idx].complete
@@ -613,8 +827,6 @@ class RobHFRollout(BaseRollout):
                     task_records[idx]['active'] = False
                     task_records[idx]['complete'] = False
                     task_records[idx]['finish_step'] = step + self.config.action_chunks_len
-                    #raise
-            #print(f"[Step {step}] Collecting results took: {collect_timer.last:.3f} seconds", flush=True)
             
             inputs = new_inputs
             step += self.config.action_chunks_len
@@ -632,6 +844,7 @@ class RobHFRollout(BaseRollout):
                 print(f"Environment cleanup failed: {e}", flush=True)
         
         torch.cuda.empty_cache()
+        gc.collect()
         
         # Save validation videos
         if is_valid:
@@ -867,7 +1080,7 @@ class RobHFRollout(BaseRollout):
             
             return batch
                 
-    def _obs_to_input(self, obs):
+    def _obs_to_input(self, obs, version="1.0"):
         if "libero" in self.config.task_suite_name:
             from verl.utils.libero_utils import quat2axisangle
             state = np.concatenate([
@@ -876,9 +1089,13 @@ class RobHFRollout(BaseRollout):
                 obs["robot0_gripper_qpos"]
             ])
         else:
-            state = obs['joint_action']
-            state[6] /= 0.045
-            state[13] /= 0.045
+            if version == "1.0":
+                state = obs['joint_action']
+                state[6] /= 0.045
+                state[13] /= 0.045
+            else:  # 2.0
+                state = obs['joint_action']['vector']
+                # Note: For 2.0, the state normalization might be different
             
         if self.config.num_images_in_input == 3:
             return {

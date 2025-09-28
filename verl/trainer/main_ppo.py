@@ -24,7 +24,8 @@ from verl import DataProto
 import torch
 from verl.utils.reward_score import gsm8k, math, countdown, multiply, logic
 from verl.trainer.ppo.ray_trainer import RayTrainer
-
+import warnings
+warnings.filterwarnings("ignore", message="Batch mode enable graph is only supported with num_graph_seeds==1")
 
 class RobRewardManager():
     """The reward manager.
