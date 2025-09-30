@@ -17,8 +17,7 @@ if [ ! -d "$CKPT_PATH" ]; then
 fi
 
 # Get the absolute path of the script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 # Define the list of files to copy
 FILES=(
     "${SCRIPT_DIR}/verl/utils/vla_utils/openvla_oft/configuration_prismatic.py"

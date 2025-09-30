@@ -19,7 +19,7 @@ NUM_GPUS=8
 # If you want to use 2*8 GPU to RL. Set NUM_NODES=2
 NUM_NODES=1 
 ALIGN_PATH="YOUR PATH TO SimpleVLA-RL/align.json"
-sh examples/overwrite_vla_ckpt_utils.sh $SFT_MODEL_PATH 
+bash examples/overwrite_vla_ckpt_utils.sh $SFT_MODEL_PATH 
 
 HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
     data.task_suite_name=$DATASET_NAME \

@@ -14,13 +14,13 @@ SFT_MODEL_PATH="YOUR SFT_MODEL_PATH"
 CKPT_PATH="THE PATH YOU WANT TO SAVE YOUR CKPT"
 # Currently Supported DATASET_NAME tasks for robotwin2.0 can be found at examples/robotwin2_tasks_info.txt
 DATASET_NAME=TASK_NAME_YOU_SELECT
-TRAJ_MINI_BATCH_SIZE=8 #The specific values are in examples/robotwin2_tasks_info.txt
+TRAJ_MINI_BATCH_SIZE=8 #NEED TO CHECK! The specific values are in examples/robotwin2_tasks_info.txt
 VLA_NAME="openvla-oft"
 NUM_GPUS=8
 # If you want to use 2*8 GPU to RL. Set NUM_NODES=2
 NUM_NODES=1 
 ALIGN_PATH="YOUR PATH TO SimpleVLA-RL/align.json"
-sh examples/overwrite_vla_ckpt_utils.sh $SFT_MODEL_PATH 
+bash examples/overwrite_vla_ckpt_utils.sh $SFT_MODEL_PATH 
 
 HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
     data.task_suite_name=robotwin2_$DATASET_NAME \
@@ -63,7 +63,7 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.temperature=1.6 \
     actor_rollout_ref.rollout.experiment_name=$EXPERIMENT_NAME \
     actor_rollout_ref.rollout.micro_batch_size=1 \
-    actor_rollout_ref.rollout.unnorm_key=robotwin2_$DATASET_NAME \
+    actor_rollout_ref.rollout.unnorm_key=robotwin2_${DATASET_NAME}_1k \
     actor_rollout_ref.rollout.model_family=openvla \
     actor_rollout_ref.rollout.task_suite_name=robotwin2_$DATASET_NAME \
     actor_rollout_ref.rollout.num_steps_wait=10 \
