@@ -175,6 +175,13 @@ class RobActorRolloutRefWorker(Worker):
             'eos_token_id': self.tokenizer.eos_token_id,
             'pad_token_id': self.tokenizer.pad_token_id,
         }
+        if self.config.rollout.use_proprio:
+            override_config_kwargs["use_proprio"] = True
+            override_config_kwargs["proprio_dim"] = self.config.model.action_token_len
+        else:
+            override_config_kwargs["use_proprio"] = False
+            override_config_kwargs["proprio_dim"] = self.config.model.action_token_len
+
         override_config_kwargs.update(override_model_config)
         update_model_config(actor_model_config, override_config_kwargs=override_config_kwargs)
         if self.rank == 0:
@@ -193,6 +200,10 @@ class RobActorRolloutRefWorker(Worker):
                                                         config=actor_model_config,              
                                                         trust_remote_code=True,
                                                     )
+                if self.config.rollout.use_proprio and self.config.model.resume == False:
+                    # Load proprio projector weights if available
+                    actor_module.load_proprio_projector_weights(local_path)
+                    print("******Loaded pre-trained proprio projector weights*********")
                 #oft add
                 actor_module.vision_backbone.set_num_images_in_input(self.config.actor.num_images_in_input)
                 

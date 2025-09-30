@@ -292,19 +292,28 @@ class RayTrainer(object):
     def _create_dataloader(self):   # next fix
         from torch.utils.data import DataLoader
         # TODO: we have to make sure the batch size is divisible by the dp size
-        from verl.utils.dataset.rob_dataset import LIBERO_Dataset, collate_fn
-        self.train_dataset = LIBERO_Dataset(self.config.data.task_suite_name,
+        from verl.utils.dataset.rob_dataset import LIBERO_Dataset, Robotwin_Dataset, collate_fn
+        if "libero" in self.config.data.task_suite_name:
+            self.train_dataset = LIBERO_Dataset(self.config.data.task_suite_name,
+                                                num_trials_per_task=self.config.data.num_trials_per_task,
+                                                train_val ="train")
+            self.val_dataset = LIBERO_Dataset(self.config.data.task_suite_name,
                                             num_trials_per_task=self.config.data.num_trials_per_task,
-                                            train_val ="train")
+                                            train_val ="valid")
+        elif "robotwin" in self.config.data.task_suite_name:
+            # (cjh) We assume here that data set names are "robotwin_{task_name}" or "robotwin_all"
+            self.train_dataset = Robotwin_Dataset(self.config.data.task_suite_name,
+                                                  num_trials_per_task=self.config.data.num_trials_per_task,train_val ="train")
+            self.val_dataset = Robotwin_Dataset(self.config.data.task_suite_name,
+                                                num_trials_per_task=self.config.data.num_trials_per_task,train_val ="valid")
+        else:
+            raise ValueError(f'Unsupported task suite name: {self.config.data.task_suite_name}')
+
         self.train_dataloader = BufferedDataLoader(DataLoader(dataset=self.train_dataset,
                                            batch_size=int(self.config.data.train_batch_size*self.config.data.oversample_factor),
                                            shuffle=True,
                                            drop_last=True,
                                            collate_fn=collate_fn))
-
-        self.val_dataset = LIBERO_Dataset(self.config.data.task_suite_name,
-                                        num_trials_per_task=self.config.data.num_trials_per_task,
-                                        train_val ="valid")
         self.val_dataloader = DataLoader(dataset=self.val_dataset,
                                          batch_size=self.config.data.val_batch_size,
                                          shuffle=True,
@@ -360,7 +369,8 @@ class RayTrainer(object):
                 metric_dict['acc_wformat/' + k] = v
             reward_tensor_lst.append(reward_tensor)
             #data_source_lst.append(test_batch.non_tensor_batch.get('data_source', ['unknown'] * reward_tensor.shape[0]))
-            data_source_lst.append( [self.config.data.task_suite_name] * reward_tensor.shape[0])
+            #data_source_lst.append( [self.config.data.task_suite_name] * reward_tensor.shape[0])
+            data_source_lst.append(test_batch.non_tensor_batch.get('data_source', [self.config.data.task_suite_name] * reward_tensor.shape[0]))
 
         reward_tensor = torch.cat(reward_tensor_lst, dim=0).sum(-1).cpu()  # (batch_size,)
         data_sources = np.concatenate(data_source_lst, axis=0)
@@ -515,9 +525,14 @@ class RayTrainer(object):
                             newbatch = DataProto.concat([buffer_batch, newbatch])
                             buffer_batch = []
 
-                        gen_batch = newbatch.select(batch_keys=['task_id', 'trial_id'],
-                                                    non_tensor_batch_keys={"task_suite_name"},
-                                                    meta_info_keys={})
+                        if "robotwin" in self.config.data.task_suite_name:
+                            gen_batch = newbatch.select(batch_keys=['task_id', 'trial_id',"trial_seed"],
+                                                        non_tensor_batch_keys={"task_suite_name"},
+                                                        meta_info_keys={})
+                        else:
+                            gen_batch = newbatch.select(batch_keys=['task_id', 'trial_id'],
+                                                        non_tensor_batch_keys={"task_suite_name"},
+                                                        meta_info_keys={})
  
                         newbatch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(newbatch.batch))],
                                                              dtype=object)

@@ -6,7 +6,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=true
 export CUDA_LAUNCH_BLOCKING=1
 export TORCH_USE_CUDA_DSA=1
-
+export ROBOT_PLATFORM=LIBERO # Use LIBERO: ROBOT_PLATFORM=LIBERO  Use Robotwin ROBOT_PLATFORM=ALOHA
 PROJECT_NAME='SimpleVLA-RL'
 EXPERIMENT_NAME='MODIFIED YOURSELF e.g. vla-lib10_model10j_lr10_tmp16_nsample8_clip08-128_batch64_ppominibs128_node2' 
 # For openvla-oft Libero-Long traj1 SFT or traj all SFT models can be find in https://huggingface.co/collections/Haozhan72/simplevla-rl-6833311430cd9df52aeb1f86
@@ -19,8 +19,9 @@ NUM_GPUS=8
 # If you want to use 2*8 GPU to RL. Set NUM_NODES=2
 NUM_NODES=1 
 ALIGN_PATH="YOUR PATH TO SimpleVLA-RL/align.json"
+bash examples/overwrite_vla_ckpt_utils.sh $SFT_MODEL_PATH 
 
-HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
+HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
     data.task_suite_name=$DATASET_NAME \
     data.num_trials_per_task=50 \
     data.n_samples=8 \
@@ -53,6 +54,7 @@ HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
     actor_rollout_ref.model.use_remove_padding=False \
     actor_rollout_ref.actor.entropy_coeff=0. \
     actor_rollout_ref.rollout.num_images_in_input=1 \
+    actor_rollout_ref.rollout.use_proprio=False \
     actor_rollout_ref.rollout.val_micro_batch_size=8 \
     actor_rollout_ref.rollout.temperature=1.6 \
     actor_rollout_ref.rollout.experiment_name=$EXPERIMENT_NAME \
