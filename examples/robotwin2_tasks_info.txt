@@ -1,0 +1,17 @@
+#The currently supported tasks for robotwin2.0 are as follows. Below are their corresponding traj_mini_batch_size values.
+beat_block_hammer          traj_mini_batch_size=8
+blocks_ranking_rgb         traj_mini_batch_size=8
+click_bell                 traj_mini_batch_size=8
+handover_block             traj_mini_batch_size=8
+handover_mic               traj_mini_batch_size=8
+lift_pot                   traj_mini_batch_size=8
+move_can_pot               traj_mini_batch_size=8
+move_stapler_pad           traj_mini_batch_size=8
+pick_dual_bottles          traj_mini_batch_size=9
+place_a2b_left             traj_mini_batch_size=8
+place_a2b_right            traj_mini_batch_size=8
+place_container_plate      traj_mini_batch_size=6
+place_empty_cup            traj_mini_batch_size=8
+place_phone_stand          traj_mini_batch_size=8
+put_bottles_dustbin        traj_mini_batch_size=8
+stack_bowls_two            traj_mini_batch_size=8

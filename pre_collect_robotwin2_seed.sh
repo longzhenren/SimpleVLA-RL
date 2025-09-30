@@ -53,24 +53,10 @@ fi
 echo "Now use curobo planner for pre-collect seed."
 
 #start collect seed
-
 DATASET_NAME="robotwin2.0 task name"
 cd "${SCRIPT_DIR}/verl/workers/rollout"
 python pre_collect_twin2_seed.py --tasks $DATASET_NAME --seed-start  100000  --seed-end  200000  --target-count 1000  --num-gpus 8  --data-split train
 #python pre_collect_twin2_seed.py --tasks $DATASET_NAME --seed-start  100000000  --seed-end  100100000  --target-count 160  --num-gpus 8  --data-split eval
-
-#DATASET_NAME="place_shoe"
-#ID=6024413
-
-# srun -p ai_moe --mpi=pmi2 --gres=gpu:8 -n1 --ntasks-per-node=1 --job-name=vla-rl2 --kill-on-bad-exit=1 --jobid=$ID \
-#   apptainer exec  --nv --bind /mnt:/mnt /mnt/petrelfs/lihaozhan/docker/robotwin_v2_conda.sif \
-#   bash -c "source /opt/conda/etc/profile.d/conda.sh && \
-#   export PYTHONNOUSERSITE=1 && \
-#   export RAY_TMPDIR=/mnt/petrelfs/lihaozhan/raytmp && \
-#   conda activate verl_twin2_oft && \
-#   cd ${SCRIPT_DIR}/verl/workers/rollout && \
-#   python pre_collect_twin2_seed.py --tasks $DATASET_NAME --seed-start  100200000  --seed-end  100300000  --target-count 40  --num-gpus 8  --data-split train" ``
-
 # collect seed end 
 
 #!/bin/bash

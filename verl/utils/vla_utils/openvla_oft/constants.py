@@ -4,6 +4,7 @@ Important constants for VLA training and evaluation.
 Attempts to automatically identify the correct constants to set based on the Python command used to launch
 training or evaluation. If it is unclear, defaults to using the LIBERO simulation benchmark constants.
 """
+import os
 import sys
 from enum import Enum
 
@@ -68,6 +69,22 @@ BRIDGE_CONSTANTS = {
 
 # Function to detect robot platform from command line arguments
 def detect_robot_platform():
+    
+    robot_env = os.environ.get('ROBOT_PLATFORM', '').upper()
+    if robot_env:
+        # 环境变量映射到平台
+        env_mapping = {
+            'LIBERO': 'LIBERO',
+            'ALOHA': 'ALOHA',
+            'ALOHA_12': 'ALOHA_12',
+            'ALOHA_8': 'ALOHA_8',
+            'ALOHA_6': 'ALOHA_6',
+            'BRIDGE': 'BRIDGE',
+        }
+        if robot_env in env_mapping:
+            print(f"Detected robot platform from environment: {env_mapping[robot_env]}")
+            return env_mapping[robot_env]
+    
     cmd_args = " ".join(sys.argv).lower()
 
     if "aloha_12chunk" in cmd_args:
