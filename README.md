@@ -25,6 +25,7 @@
 
 > We demonstrate that even simple 0/1 rewards can enable effective, scalable, generalizable online RL for VLA models.
 
+
 <div align="center">
 <img src="figs/teaser.png" alt="Overview of SimpleVLA-RL." width="90%" />
 
