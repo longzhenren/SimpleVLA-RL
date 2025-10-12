@@ -153,3 +153,7 @@ If you find SimpleVLA-RL helpful, please cite us.
   year={2025}
 }
 ```
+
+# 🌟Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=PRIME-RL/SimpleVLA-RL&type=Date)](https://www.star-history.com/#PRIME-RL/SimpleVLA-RL&Date)
