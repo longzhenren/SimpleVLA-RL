@@ -15,6 +15,6 @@
 from .base import BaseRollout
 from .naive import NaiveRollout
 from .hf_rollout import HFRollout
-from .rob_rollout import RobHFRollout
+from .uav_rollout import UavHFRollout
 
-__all__ = ["BaseRollout", "NaiveRollout", "HFRollout","RobHFRollout"]
+__all__ = ["BaseRollout", "NaiveRollout", "HFRollout", "UavHFRollout"]

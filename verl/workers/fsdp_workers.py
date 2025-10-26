@@ -324,34 +324,18 @@ class RobActorRolloutRefWorker(Worker):
 
     def _build_rollout(self):
         if self.config.rollout.name == 'hf':
-            from verl.workers.rollout import RobHFRollout
+            from verl.workers.rollout import UavHFRollout
             from verl.workers.hybrid_engine import BaseShardingManager
-            rollout = RobHFRollout(module=self.actor_module_fsdp, config=self.config.rollout)
+            logger.info("[fsdp] Building UAV HF Rollout")
+            rollout = UavHFRollout(module=self.actor_module_fsdp, config=self.config.rollout)
             sharding_manager = BaseShardingManager()
-            # TODO: a sharding manager that do nothing?
         elif self.config.rollout.name == 'vllm':
             raise ValueError
-            # from verl.workers.rollout.vllm_rollout import vLLMRollout
-            # from verl.workers.hybrid_engine import FSDPVLLMShardingManager
-            # log_gpu_memory_usage('Before building vllm rollout', logger=None)
-            # rollout = vLLMRollout(actor_module=self.actor_module_fsdp,
-            #                       config=self.config.rollout,
-            #                       tokenizer=self.tokenizer,
-            #                       model_hf_config=self.actor_model_config)
-            # log_gpu_memory_usage('After building vllm rollout', logger=None)
-            # if torch.distributed.get_world_size() == 1:
-            #     self.config.rollout.load_format = 'dummy_hf'
-            # sharding_manager = FSDPVLLMShardingManager(module=self.actor_module_fsdp,
-            #                                            inference_engine=rollout.inference_engine,
-            #                                            model_config=self.actor_model_config,
-            #                                            full_params='hf' in self.config.rollout.load_format)
-            # log_gpu_memory_usage('After building sharding manager', logger=None)
-
         return rollout, sharding_manager
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def init_model(self):
-        from verl.workers.actor import RobDataParallelPPOActor
+        from verl.workers.actor import UavDataParallelPPOActor
         # This is used to import external_lib into the huggingface systems
         import_external_libs(self.config.model.get('external_lib', None))
 
@@ -387,7 +371,8 @@ class RobActorRolloutRefWorker(Worker):
         # load from checkpoint
         if self._is_actor:
             OmegaConf.set_struct(self.config.actor, True)
-            self.actor = RobDataParallelPPOActor(config=self.config.actor,
+            logger.info("[fsdp] Initializing UAV Actor policy")
+            self.actor = UavDataParallelPPOActor(config=self.config.actor,
                                               actor_module=self.actor_module_fsdp,
                                               actor_optimizer=self.actor_optimizer)
 
@@ -405,7 +390,8 @@ class RobActorRolloutRefWorker(Worker):
                 offload_fsdp_param_and_grad(module=self.ref_module_fsdp, offload_grad=self._is_offload_grad)
 
             OmegaConf.set_struct(self.config.ref, True)
-            self.ref_policy = RobDataParallelPPOActor(config=self.config.ref, actor_module=self.ref_module_fsdp)
+            logger.info("[fsdp] Initializing UAV Reference policy")
+            self.ref_policy = UavDataParallelPPOActor(config=self.config.ref, actor_module=self.ref_module_fsdp)
 
         torch.cuda.synchronize()
         torch.distributed.barrier()
@@ -501,11 +487,12 @@ class RobActorRolloutRefWorker(Worker):
         #     print(f"gen seq will start, and the num samples are: {tmp_sample}")
     
         with self.sharding_manager:
+            logger.info(f"[fsdp] generate_sequences: batch={prompts.batch.batch_size}, recompute={recompute_log_prob}")
             log_gpu_memory_usage('After entering sharding manager', logger=logger)    
             prompts = self.sharding_manager.preprocess_data(prompts)
             output = self.rollout.generate_sequences(prompts=prompts)
             log_gpu_memory_usage('After rollout generation', logger=logger)
-
+            logger.debug(f"[fsdp] rollout output keys: {list(output.batch.keys())}")
             output = self.sharding_manager.postprocess_data(output)
             torch.cuda.synchronize()
 
@@ -513,8 +500,13 @@ class RobActorRolloutRefWorker(Worker):
         #     print("gen seq end ,  old log will begin")
         
         if self._is_actor and recompute_log_prob:
-            # we should always recompute old_log_probs when it is HybridEngine
-            
+            # Always recompute old_log_probs for HybridEngine
+            logger.info("[fsdp] Recomputing old_log_probs for UAV actor")
+            # Ensure required keys exist for UAV actor
+            required_keys = ['input_ids', 'attention_mask', 'pixel_values', 'responses']
+            missing = [k for k in required_keys if k not in output.batch]
+            if missing:
+                logger.error(f"[fsdp] Missing keys in rollout output for log_prob: {missing}")
             output.meta_info['micro_batch_size'] = self.config.rollout.log_prob_micro_batch_size
             output.meta_info['temperature'] = self.config.rollout.temperature
             output.meta_info['use_dynamic_bsz'] = self.config.rollout.log_prob_use_dynamic_bsz
@@ -524,6 +516,7 @@ class RobActorRolloutRefWorker(Worker):
             output.batch['old_log_probs'] = old_log_probs
 
         output = output.to('cpu')
+        logger.info(f"[fsdp] generate_sequences complete: batch={prompts.batch.batch_size}, output_keys={list(output.batch.keys())}, has_old_log_probs={'old_log_probs' in output.batch}")
 
         if self._is_offload_param:
             # NOTE(sgm): the grad is already in CPU, only offload param here
@@ -552,7 +545,9 @@ class RobActorRolloutRefWorker(Worker):
         data.meta_info['max_token_len'] = self.config.ref.log_prob_max_token_len_per_gpu
         data.meta_info['use_dynamic_bsz'] = self.config.ref.log_prob_use_dynamic_bsz
         data.meta_info['pad_token_id'] = self.tokenizer.pad_token_id
+        logger.info(f"[fsdp] compute_ref_log_prob start: micro_bsz={micro_batch_size}, max_len={data.meta_info['max_token_len']}, use_dynamic_bsz={data.meta_info['use_dynamic_bsz']}")
         output = self.ref_policy.compute_log_prob(data=data)
+        logger.debug(f"[fsdp] compute_ref_log_prob done: output_shape={tuple(output.shape) if hasattr(output, 'shape') else 'n/a'}")
         output = DataProto.from_dict(tensors={'ref_log_prob': output})
 
         output = output.to('cpu')
@@ -567,16 +562,19 @@ class RobActorRolloutRefWorker(Worker):
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def save_checkpoint(self, local_path, hdfs_path=None):
         assert self._is_actor
+        logger.info(f"[fsdp] save_checkpoint start: rank={self.rank}, local_path={local_path}, hdfs_path={hdfs_path}, is_lora={self._is_lora}, offload_param={self._is_offload_param}, offload_optimizer={self._is_offload_optimizer}")
         
         import torch.distributed as dist
         from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
         from peft import PeftModel
         import transformers
+        from transformers import AutoModelForVision2Seq
         
         if self._is_offload_param:
             load_fsdp_param_and_grad(module=self.actor_module_fsdp,
                                      device_id=torch.cuda.current_device(),
                                      load_grad=self._is_offload_grad)
+            logger.debug("[fsdp] save_checkpoint: loaded FSDP params/grad to CUDA for saving")
 
         #lora add
         if self._is_lora and isinstance(self.actor_module, PeftModel):
@@ -605,9 +603,10 @@ class RobActorRolloutRefWorker(Worker):
 
             dist.barrier()
             if dist.get_rank() == 0:
-                print(f"[rank-{self.rank}]: Saved LoRA adapter to: {lora_save_path}")
+                logger.info(f"[fsdp] LoRA adapter saved at: {lora_save_path}")
             
             # save total model
+            logger.info("[fsdp] Merging LoRA into base VLA for full checkpoint")
             base_vla = AutoModelForVision2Seq.from_pretrained(
                 self.config.model.path, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True, trust_remote_code=True, device_map="cpu"
             )
@@ -616,7 +615,7 @@ class RobActorRolloutRefWorker(Worker):
 
             if dist.get_rank() == 0:
                 merged_vla.save_pretrained(local_path)
-                print(f"Saved merged model at: {local_path}")
+                logger.info(f"[fsdp] Saved merged model at: {local_path}")
 
             # Wait for merged model to be saved
             dist.barrier()    
@@ -630,18 +629,22 @@ class RobActorRolloutRefWorker(Worker):
             with FSDP.state_dict_type(self.actor.actor_module, StateDictType.FULL_STATE_DICT, cfg):
                 state_dict = self.actor.actor_module.state_dict()
             if self.rank == 0:
-                print(f'Saving actor checkpoint to {local_path}')
+                logger.info(f"[fsdp] Saving actor full-state checkpoint to {local_path}")
                 os.makedirs(local_path, exist_ok=True)
                 self.actor_module.save_pretrained(local_path, state_dict=state_dict)
                 self.tokenizer.save_pretrained(local_path)
+                logger.info(f"[fsdp] Tokenizer saved alongside model at {local_path}")
                 if hdfs_path is not None:
-                    print(f'Uploading actor checkpoint to {hdfs_path}')
+                    logger.info(f"[fsdp] Uploading actor checkpoint to HDFS: {hdfs_path}")
                     hdfs_io.makedirs(hdfs_path, exist_ok=True)
                     hdfs_io.copy(src=local_path, dst=hdfs_path)
+                    logger.info(f"[fsdp] HDFS upload complete: {hdfs_path}")
 
         torch.distributed.barrier()
         if self._is_offload_param:
             offload_fsdp_param_and_grad(module=self.actor_module_fsdp, offload_grad=self._is_offload_grad)
+            logger.info(f"[fsdp] save_checkpoint complete: local_path={local_path}, hdfs_path={hdfs_path}")
+            logger.debug("[fsdp] save_checkpoint: offloaded FSDP params/grad back to CPU after saving")
 
 
 class ActorRolloutRefWorker(Worker):
